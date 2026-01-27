@@ -1,0 +1,354 @@
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+  --bs-body-bg: #05070d;
+  --bs-body-color: #e6edf6;
+  --bs-secondary-color: rgba(230, 237, 246, 0.70);
+  --bs-border-color: rgba(230, 237, 246, 0.14);
+  --bs-primary: #22c55e;
+  --bs-primary-rgb: 34, 197, 94;
+  --bs-link-color: rgba(230, 237, 246, 0.92);
+  --bs-link-hover-color: rgba(248, 250, 252, 0.98);
+  --bs-card-bg: rgba(0, 0, 0, 0.34);
+  --bs-card-border-color: rgba(230, 237, 246, 0.14);
+  --bs-tertiary-bg: rgba(0, 0, 0, 0.28);
+  --bs-emphasis-color: rgba(248, 250, 252, 0.98);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, 'Apple Color Emoji',
+    'Segoe UI Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0)),
+    radial-gradient(1px 1px at 78% 22%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0)),
+    radial-gradient(1px 1px at 38% 72%, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0)),
+    radial-gradient(1px 1px at 90% 78%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0)),
+    radial-gradient(1200px 800px at 50% 40%, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.0)),
+    radial-gradient(1400px 900px at 50% 55%, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.75)),
+    var(--bs-body-bg);
+  color: var(--bs-body-color);
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-page {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+.app-navbar {
+  background: rgba(0, 0, 0, 0.62);
+  border-bottom: 1px solid rgba(230, 237, 246, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.app-navbar .navbar-brand {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.app-navbar .nav-link {
+  color: rgba(226, 232, 240, 0.82);
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+}
+
+.app-navbar .nav-link:hover {
+  color: rgba(248, 250, 252, 0.98);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-navbar .nav-link.active {
+  color: rgba(248, 250, 252, 0.98);
+  background: rgba(34, 197, 94, 0.18);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+}
+
+.app-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(34, 197, 94, 0.18);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  color: rgba(248, 250, 252, 0.98);
+}
+
+.card {
+  background: var(--bs-card-bg);
+  border-color: var(--bs-card-border-color);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30);
+}
+
+.card-header {
+  background: transparent;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--bs-body-color);
+  --bs-table-border-color: rgba(148, 163, 184, 0.16);
+}
+
+.table-hover > tbody > tr:hover > * {
+  --bs-table-bg-state: rgba(255, 255, 255, 0.04);
+}
+
+.form-control,
+.form-select {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(148, 163, 184, 0.22);
+  color: var(--bs-body-color);
+}
+
+.form-control::placeholder {
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: rgba(34, 197, 94, 0.55);
+  box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, 0.18);
+}
+
+.btn-primary {
+  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.20);
+}
+
+.text-muted {
+  color: rgba(230, 237, 246, 0.62) !important;
+}
+
+/* Custom Bootstrap utilities for dark theme */
+.bg-dark-900 {
+  background-color: #05070d !important;
+}
+
+.bg-dark-800 {
+  background-color: #070a11 !important;
+}
+
+.bg-dark-700 {
+  background-color: #0b0f18 !important;
+}
+
+.text-gray-400 {
+  color: #9ca3af !important;
+}
+
+.border-dark-800 {
+  border-color: #070a11 !important;
+}
+
+.border-dark-700 {
+  border-color: #0b0f18 !important;
+}
+
+.pro-event-map .leaflet-container {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.pro-event-map .leaflet-control-zoom a {
+  background: rgba(0, 0, 0, 0.78);
+  color: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.pro-event-map .leaflet-control-attribution {
+  background: rgba(0, 0, 0, 0.62);
+  color: rgba(148, 163, 184, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  margin: 8px;
+  padding: 2px 8px;
+}
+
+.cybermap-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: auto;
+}
+
+.cybermap-bg__overlay {
+  pointer-events: none;
+}
+
+.cybermap-bg__overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1200px 900px at 50% 50%, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.55)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.45));
+}
+
+.cybermap-bg__iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  opacity: 1;
+}
+
+.cybermap-bg--green .cybermap-bg__overlay {
+  background:
+    radial-gradient(1200px 900px at 50% 50%, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.55)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.45));
+}
+
+.cybermap-bg__texture {
+  position: absolute;
+  inset: 0;
+  opacity: 0.32;
+  mix-blend-mode: screen;
+  filter: saturate(0.8) contrast(1.05);
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0)),
+    radial-gradient(1px 1px at 75% 55%, rgba(255,255,255,0.25), rgba(255,255,255,0)),
+    radial-gradient(1px 1px at 40% 80%, rgba(255,255,255,0.20), rgba(255,255,255,0)),
+    url("https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+
+.cybermap-bg--globe .cybermap-bg__texture {
+  opacity: 0.22;
+  filter: saturate(0.7) contrast(1.05) blur(0.2px);
+}
+
+.cybermap-bg__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cybermap-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+.cybermap-panel {
+  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.46);
+  border: 1px solid rgba(230, 237, 246, 0.14);
+}
+
+.cybermap-dashboard {
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+@media (min-width: 992px) {
+  .cybermap-dashboard {
+    height: calc(100vh - 76px);
+    overflow: hidden;
+  }
+}
+
+.cybermap-dashboard .card-header {
+  padding: 0.55rem 0.85rem;
+}
+
+.cybermap-dashboard .card-body {
+  padding: 0.75rem 0.85rem;
+}
+
+.cybermap-dashboard .btn {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+.cybermap-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (min-width: 992px) {
+  .cybermap-side {
+    position: fixed;
+    top: 92px;
+    bottom: 140px;
+    width: clamp(280px, 23vw, 360px);
+    overflow: auto;
+    z-index: 4;
+    padding-right: 2px;
+  }
+
+  .cybermap-side--left {
+    left: 18px;
+  }
+
+  .cybermap-side--right {
+    right: 82px;
+  }
+}
+
+.cybermap-right .card-header {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.92rem;
+}
+
+.cybermap-right .card-body {
+  padding: 0.6rem 0.7rem;
+}
+
+.cybermap-right small,
+.cybermap-right .small {
+  font-size: 0.72rem;
+}
+
+.cybermap-right .badge {
+  font-size: 0.72rem;
+  padding: 0.26em 0.52em;
+}
+
+.cybermap-controls {
+  position: fixed;
+  right: 18px;
+  top: 86px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cybermap-controls .btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.60);
+  border: 1px solid rgba(230, 237, 246, 0.14);
+}
+
+.cybermap-controls .btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cybermap-controls .btn:focus {
+  box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, 0.18);
+}
