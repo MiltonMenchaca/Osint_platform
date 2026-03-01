@@ -110,13 +110,13 @@ def _validate_transform_configuration(transform):
             logger.error(f"Transform '{transform.name}' has empty command template")
             return False
 
-        if "{input_value}" not in transform.command_template:
+        if not any(placeholder in transform.command_template for placeholder in ["{input_value}", "{target}", "{input}", "{{input}}"]):
             logger.warning(
-                f"Transform '{transform.name}' command template missing {{input_value}} placeholder"
+                f"Transform '{transform.name}' command template missing input placeholder ({{input_value}} or {{target}})"
             )
 
         # Validate parameters JSON
-        if transform.parameters:
+        if transform.parameters and isinstance(transform.parameters, str):
             try:
                 json.loads(transform.parameters)
             except json.JSONDecodeError as e:
@@ -145,6 +145,19 @@ def _validate_transform_configuration(transform):
             "hash",
             "file",
             "text",
+            "username",
+            "social_media",
+            "cryptocurrency",
+            "technology",
+            "vulnerability",
+            "port",
+            "service",
+            "os",
+            "subdomain",
+            "account",
+            "other",
+            "mixed",
+            "any"
         ]
 
         if transform.input_type not in valid_types:
@@ -152,10 +165,17 @@ def _validate_transform_configuration(transform):
                 f"Transform '{transform.name}' has unknown input type: {transform.input_type}"
             )
 
-        if transform.output_type not in valid_types:
-            logger.warning(
-                f"Transform '{transform.name}' has unknown output type: {transform.output_type}"
-            )
+        if hasattr(transform, 'output_types') and isinstance(transform.output_types, list):
+             for output_type in transform.output_types:
+                if output_type not in valid_types:
+                    logger.warning(
+                        f"Transform '{transform.name}' has unknown output type: {output_type}"
+                    )
+        elif hasattr(transform, 'output_type'): # Legacy check
+             if transform.output_type not in valid_types:
+                logger.warning(
+                    f"Transform '{transform.name}' has unknown output type: {transform.output_type}"
+                )
 
         logger.debug(
             f"Transform '{transform.name}' configuration validated successfully"

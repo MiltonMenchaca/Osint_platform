@@ -54,19 +54,31 @@ LOGGING = copy.deepcopy(base_settings.LOGGING)
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "cumulo_api.local"]
+ALLOWED_HOSTS = ["*"]
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "OPTIONS": {
-            "timeout": 20,
-        },
+if os.environ.get("DB_HOST"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ.get("DB_NAME", "osint_platform"),
+            "USER": os.environ.get("DB_USER", "osint_user"),
+            "PASSWORD": os.environ.get("DB_PASSWORD", "osint_password"),
+            "HOST": os.environ.get("DB_HOST", "db"),
+            "PORT": os.environ.get("DB_PORT", "5432"),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": 20,
+            },
+        }
+    }
 
 # Redis Configuration for Development
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
@@ -76,6 +88,8 @@ CELERY_BROKER_URL = f"{REDIS_URL}/0"
 CELERY_RESULT_BACKEND = f"{REDIS_URL}/0"
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BROKER_CONNECTION_MAX_RETRIES = 10
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
 
 # Cache Configuration - Using local memory cache for development
 CACHES = {
@@ -88,6 +102,8 @@ CACHES = {
 
 # Email Configuration for Development
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+if "PYTEST_CURRENT_TEST" in os.environ:
+    EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 # Development-specific CORS settings
 CORS_ALLOW_ALL_ORIGINS = True

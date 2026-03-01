@@ -10,6 +10,8 @@ from .views import (
     entity_graph,
     entity_relationships,
     entity_stats,
+    entity_types,
+    geo_events,
     merge_entities,
     validate_entities,
 )
@@ -24,6 +26,8 @@ urlpatterns = [
     path("", include(router.urls)),
     # General entities endpoint (all user entities)
     path("entities/", all_entities, name="all-entities"),
+    path("entities/types/", entity_types, name="entity-types"),
+    path("events/geo/", geo_events, name="events-geo"),
     # Investigation-specific entity endpoints
     path(
         "investigations/<uuid:investigation_id>/entities/",

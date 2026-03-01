@@ -10,16 +10,27 @@ class TransformListSerializer(serializers.ModelSerializer):
 
     usage_count = serializers.IntegerField(read_only=True)
     last_used = serializers.DateTimeField(read_only=True)
+    is_available = serializers.SerializerMethodField()
+    availability_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Transform
         fields = [
             "id",
             "name",
+            "display_name",
             "description",
             "category",
             "tool_name",
+            "input_type",
+            "output_types",
             "is_enabled",
+            "requires_api_key",
+            "api_key_name",
+            "timeout",
+            "parameters",
+            "is_available",
+            "availability_message",
             "usage_count",
             "last_used",
             "created_at",
@@ -27,33 +38,52 @@ class TransformListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def get_is_available(self, obj):
+        is_available, _ = obj.check_availability()
+        return bool(is_available)
+
+    def get_availability_message(self, obj):
+        _, message = obj.check_availability()
+        return message
+
 
 class TransformDetailSerializer(serializers.ModelSerializer):
     """Serializer for Transform detail view"""
 
-    command_template = serializers.CharField()
-    input_schema = serializers.JSONField()
-    output_schema = serializers.JSONField()
-    configuration = serializers.JSONField(required=False)
+    is_available = serializers.SerializerMethodField()
+    availability_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Transform
         fields = [
             "id",
             "name",
+            "display_name",
             "description",
             "category",
             "tool_name",
             "command_template",
-            "input_schema",
-            "output_schema",
-            "configuration",
+            "input_type",
+            "output_types",
+            "parameters",
             "is_enabled",
-            "timeout_seconds",
+            "timeout",
+            "requires_api_key",
+            "api_key_name",
+            "is_available",
+            "availability_message",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_is_available(self, obj):
+        is_available, _ = obj.check_availability()
+        return bool(is_available)
+
+    def get_availability_message(self, obj):
+        _, message = obj.check_availability()
+        return message
 
 
 class TransformCreateSerializer(serializers.ModelSerializer):
@@ -63,14 +93,18 @@ class TransformCreateSerializer(serializers.ModelSerializer):
         model = Transform
         fields = [
             "name",
+            "display_name",
             "description",
             "category",
             "tool_name",
             "command_template",
-            "input_schema",
-            "output_schema",
-            "configuration",
-            "timeout_seconds",
+            "input_type",
+            "output_types",
+            "parameters",
+            "timeout",
+            "is_enabled",
+            "requires_api_key",
+            "api_key_name",
         ]
 
     def validate_name(self, value):
@@ -90,57 +124,19 @@ class TransformCreateSerializer(serializers.ModelSerializer):
 
     def validate_category(self, value):
         """Validate transform category"""
-        valid_categories = [
-            "reconnaissance",
-            "enumeration",
-            "vulnerability_scanning",
-            "network_analysis",
-            "dns_analysis",
-            "web_analysis",
-            "email_analysis",
-            "social_media",
-            "threat_intelligence",
-            "forensics",
-            "malware_analysis",
-            "data_collection",
-        ]
-
+        valid_categories = {c[0] for c in Transform.CATEGORY_CHOICES}
         if value not in valid_categories:
             raise serializers.ValidationError(
-                f"Invalid category. Must be one of: {', '.join(valid_categories)}"
+                f"Invalid category. Must be one of: {', '.join(sorted(valid_categories))}"
             )
 
         return value
 
     def validate_tool_name(self, value):
         """Validate tool name"""
-        valid_tools = [
-            "assetfinder",
-            "amass",
-            "nmap",
-            "shodan",
-            "subfinder",
-            "httpx",
-            "nuclei",
-            "gobuster",
-            "ffuf",
-            "masscan",
-            "whatweb",
-            "wafw00f",
-            "nikto",
-            "dirb",
-            "dirsearch",
-            "sqlmap",
-            "xsstrike",
-            "commix",
-            "custom",
-        ]
-
-        if value not in valid_tools:
-            raise serializers.ValidationError(
-                f"Invalid tool name. Must be one of: {', '.join(valid_tools)}"
-            )
-
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Tool name cannot be empty")
         return value
 
     def validate_command_template(self, value):
@@ -149,12 +145,11 @@ class TransformCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Command template cannot be empty")
 
         # Check for required placeholders
-        required_placeholders = ["{target}"]
-        for placeholder in required_placeholders:
-            if placeholder not in value:
-                raise serializers.ValidationError(
-                    f"Command template must contain '{placeholder}' placeholder"
-                )
+        allowed_placeholders = ["{input}", "{input_value}", "{target}"]
+        if not any(p in value for p in allowed_placeholders):
+            raise serializers.ValidationError(
+                f"Command template must contain one of: {', '.join(allowed_placeholders)}"
+            )
 
         # Validate placeholder format
         placeholder_pattern = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
@@ -182,110 +177,32 @@ class TransformCreateSerializer(serializers.ModelSerializer):
 
         return value.strip()
 
-    def validate_input_schema(self, value):
-        """Validate input schema"""
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Input schema must be a JSON object")
-
-        # Validate JSON Schema structure
-        required_fields = ["type", "properties"]
-        for field in required_fields:
-            if field not in value:
-                raise serializers.ValidationError(
-                    f"Input schema must contain '{field}' field"
-                )
-
-        if value["type"] != "object":
-            raise serializers.ValidationError("Input schema type must be 'object'")
-
-        if not isinstance(value["properties"], dict):
+    def validate_input_type(self, value):
+        valid_input_types = {c[0] for c in Transform.INPUT_TYPE_CHOICES}
+        if value not in valid_input_types:
             raise serializers.ValidationError(
-                "Input schema properties must be an object"
+                f"Invalid input_type. Must be one of: {', '.join(sorted(valid_input_types))}"
             )
-
-        # Ensure 'target' property exists
-        if "target" not in value["properties"]:
-            raise serializers.ValidationError(
-                "Input schema must contain 'target' property"
-            )
-
         return value
 
-    def validate_output_schema(self, value):
-        """Validate output schema"""
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Output schema must be a JSON object")
-
-        # Validate JSON Schema structure
-        required_fields = ["type"]
-        for field in required_fields:
-            if field not in value:
-                raise serializers.ValidationError(
-                    f"Output schema must contain '{field}' field"
-                )
-
-        return value
-
-    def validate_configuration(self, value):
-        """Validate configuration"""
+    def validate_output_types(self, value):
         if value is None:
-            return {}
-
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Configuration must be a JSON object")
-
-        # Validate specific configuration fields
-        allowed_keys = [
-            "max_retries",
-            "retry_delay",
-            "rate_limit",
-            "concurrent_limit",
-            "output_format",
-            "custom_flags",
-            "environment_vars",
-            "working_dir",
-        ]
-
-        for key in value.keys():
-            if key not in allowed_keys:
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError("output_types must be a list")
+        valid_output_types = {c[0] for c in Transform.OUTPUT_TYPE_CHOICES}
+        for item in value:
+            if item not in valid_output_types:
                 raise serializers.ValidationError(
-                    f"Invalid configuration key '{key}'. Allowed keys: {', '.join(allowed_keys)}"
+                    f"Invalid output_type '{item}'. Must be one of: {', '.join(sorted(valid_output_types))}"
                 )
-
-        # Validate specific values
-        if "max_retries" in value:
-            if not isinstance(value["max_retries"], int) or value["max_retries"] < 0:
-                raise serializers.ValidationError(
-                    "max_retries must be a non-negative integer"
-                )
-
-        if "retry_delay" in value:
-            if (
-                not isinstance(value["retry_delay"], (int, float))
-                or value["retry_delay"] < 0
-            ):
-                raise serializers.ValidationError(
-                    "retry_delay must be a non-negative number"
-                )
-
-        if "rate_limit" in value:
-            if not isinstance(value["rate_limit"], int) or value["rate_limit"] <= 0:
-                raise serializers.ValidationError(
-                    "rate_limit must be a positive integer"
-                )
-
         return value
 
-    def validate_timeout_seconds(self, value):
-        """Validate timeout"""
+    def validate_timeout(self, value):
         if value <= 0:
             raise serializers.ValidationError("Timeout must be a positive integer")
-
-        if value > 3600:  # 1 hour max
-            raise serializers.ValidationError(
-                "Timeout cannot exceed 3600 seconds (1 hour)"
-            )
-
+        if value > 3600:
+            raise serializers.ValidationError("Timeout cannot exceed 3600 seconds (1 hour)")
         return value
 
 
@@ -296,14 +213,18 @@ class TransformUpdateSerializer(serializers.ModelSerializer):
         model = Transform
         fields = [
             "name",
+            "display_name",
             "description",
             "category",
+            "tool_name",
             "command_template",
-            "input_schema",
-            "output_schema",
-            "configuration",
             "is_enabled",
-            "timeout_seconds",
+            "input_type",
+            "output_types",
+            "parameters",
+            "timeout",
+            "requires_api_key",
+            "api_key_name",
         ]
 
     def validate_name(self, value):
@@ -325,11 +246,11 @@ class TransformUpdateSerializer(serializers.ModelSerializer):
 
     # Reuse validation methods from create serializer
     validate_category = TransformCreateSerializer.validate_category
+    validate_tool_name = TransformCreateSerializer.validate_tool_name
     validate_command_template = TransformCreateSerializer.validate_command_template
-    validate_input_schema = TransformCreateSerializer.validate_input_schema
-    validate_output_schema = TransformCreateSerializer.validate_output_schema
-    validate_configuration = TransformCreateSerializer.validate_configuration
-    validate_timeout_seconds = TransformCreateSerializer.validate_timeout_seconds
+    validate_input_type = TransformCreateSerializer.validate_input_type
+    validate_output_types = TransformCreateSerializer.validate_output_types
+    validate_timeout = TransformCreateSerializer.validate_timeout
 
 
 class TransformSerializer(serializers.ModelSerializer):
@@ -365,104 +286,49 @@ class TransformStatsSerializer(serializers.Serializer):
 class TransformTestSerializer(serializers.Serializer):
     """Serializer for testing transforms"""
 
-    transform_id = serializers.IntegerField()
     test_input = serializers.JSONField()
-
-    def validate_transform_id(self, value):
-        """Validate transform exists"""
-        try:
-            transform = Transform.objects.get(id=value)
-            if not transform.is_enabled:
-                raise serializers.ValidationError("Transform is not enabled")
-            return value
-        except Transform.DoesNotExist:
-            raise serializers.ValidationError("Transform not found")
+    execute = serializers.BooleanField(required=False, default=False)
 
     def validate_test_input(self, value):
         """Validate test input"""
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Test input must be a JSON object")
+        if isinstance(value, str):
+            if not value.strip():
+                raise serializers.ValidationError("Test input cannot be empty")
+            return value.strip()
 
-        # Basic validation - specific validation will be done by the transform
-        if "target" not in value:
-            raise serializers.ValidationError("Test input must contain 'target' field")
+        if isinstance(value, dict):
+            for key in ("target", "input", "input_value", "value"):
+                if key in value and isinstance(value[key], str) and value[key].strip():
+                    return value
+            raise serializers.ValidationError(
+                "Test input must contain one of: target, input, input_value, value"
+            )
 
-        return value
+        raise serializers.ValidationError("Test input must be a string or a JSON object")
 
 
 class TransformValidationSerializer(serializers.Serializer):
     """Serializer for transform validation"""
 
-    command_template = serializers.CharField()
-    input_schema = serializers.JSONField()
-    test_input = serializers.JSONField()
-
-    def validate_command_template(self, value):
-        """Validate command template"""
-        return TransformCreateSerializer().validate_command_template(value)
-
-    def validate_input_schema(self, value):
-        """Validate input schema"""
-        return TransformCreateSerializer().validate_input_schema(value)
-
-    def validate_test_input(self, value):
-        """Validate test input against schema"""
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Test input must be a JSON object")
-
-        return value
-
-    def validate(self, attrs):
-        """Cross-field validation"""
-        # Validate test input against input schema
-        input_schema = attrs["input_schema"]
-        test_input = attrs["test_input"]
-
-        # Check required properties
-        required_props = input_schema.get("required", [])
-        for prop in required_props:
-            if prop not in test_input:
-                raise serializers.ValidationError(
-                    f"Test input missing required property: {prop}"
-                )
-
-        # Validate property types
-        properties = input_schema.get("properties", {})
-        for prop, value in test_input.items():
-            if prop in properties:
-                prop_schema = properties[prop]
-                expected_type = prop_schema.get("type")
-
-                if expected_type == "string" and not isinstance(value, str):
-                    raise serializers.ValidationError(
-                        f"Property '{prop}' must be a string"
-                    )
-                elif expected_type == "integer" and not isinstance(value, int):
-                    raise serializers.ValidationError(
-                        f"Property '{prop}' must be an integer"
-                    )
-                elif expected_type == "number" and not isinstance(value, (int, float)):
-                    raise serializers.ValidationError(
-                        f"Property '{prop}' must be a number"
-                    )
-                elif expected_type == "boolean" and not isinstance(value, bool):
-                    raise serializers.ValidationError(
-                        f"Property '{prop}' must be a boolean"
-                    )
-                elif expected_type == "array" and not isinstance(value, list):
-                    raise serializers.ValidationError(
-                        f"Property '{prop}' must be an array"
-                    )
-
-        return attrs
+    validation_type = serializers.ChoiceField(
+        choices=["basic", "full"], required=False, default="full"
+    )
 
 
 class BulkTransformActionSerializer(serializers.Serializer):
     """Serializer for bulk transform actions"""
 
-    action = serializers.ChoiceField(choices=["enable", "disable", "delete", "test"])
+    action = serializers.ChoiceField(
+        choices=[
+            "enable",
+            "disable",
+            "delete",
+            "check_availability",
+            "update_command_templates",
+        ]
+    )
     transform_ids = serializers.ListField(
-        child=serializers.IntegerField(), min_length=1, max_length=50
+        child=serializers.UUIDField(), min_length=1, max_length=50
     )
 
     def validate_transform_ids(self, value):
@@ -485,10 +351,13 @@ class TransformImportSerializer(serializers.Serializer):
         """Validate transform data for import"""
         required_fields = [
             "name",
+            "display_name",
+            "description",
             "category",
             "tool_name",
             "command_template",
-            "input_schema",
+            "input_type",
+            "output_types",
         ]
 
         for i, transform_data in enumerate(value):

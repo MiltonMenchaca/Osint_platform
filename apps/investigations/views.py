@@ -1,7 +1,10 @@
 import logging
+import re
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from django.core.cache import cache
+from django.db import IntegrityError
 from django.db.models import Avg, Count, Max, Min, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -23,25 +26,347 @@ from .serializers import (
     TransformExecutionDetailSerializer,
     TransformExecutionListSerializer,
 )
+from .tasks import execute_transform
+from .services import AutoReconService, OsintCatalogService
+
+class AutoReconView(generics.GenericAPIView):
+    """
+    Endpoint to trigger automated reconnaissance
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, *args, **kwargs):
+        target = request.data.get('target')
+        investigation_id = request.data.get("investigation_id")
+        if not target:
+            return Response(
+                {"error": "Target URL/Domain is required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            service = AutoReconService()
+            results = service.run_scan(target)
+            if investigation_id:
+                investigation = get_object_or_404(
+                    Investigation, id=investigation_id, created_by=request.user
+                )
+                metadata = investigation.metadata or {}
+                metadata["auto_recon"] = results
+                metadata["auto_recon_updated_at"] = timezone.now().isoformat()
+                investigation.metadata = metadata
+                investigation.save(update_fields=["metadata", "updated_at"])
+
+                cleaned_target = str(results.get("target") or target).strip().strip("`")
+                parsed = urlparse(cleaned_target if "://" in cleaned_target else f"http://{cleaned_target}")
+                domain = parsed.hostname or cleaned_target.split("/")[0]
+                is_ip = bool(re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", domain))
+                seed_type = "ip" if is_ip else "domain"
+                seed_entity, _ = Entity.objects.get_or_create(
+                    investigation=investigation,
+                    entity_type=seed_type,
+                    value=domain,
+                    defaults={"source": "auto_recon", "confidence_score": 0.8, "is_seed": True},
+                )
+                url_entity = None
+                if cleaned_target.startswith(("http://", "https://")) and cleaned_target != domain:
+                    url_entity, _ = Entity.objects.get_or_create(
+                        investigation=investigation,
+                        entity_type="url",
+                        value=cleaned_target,
+                        defaults={"source": "auto_recon", "confidence_score": 0.7},
+                    )
+                    if url_entity.id != seed_entity.id:
+                        Relationship.objects.get_or_create(
+                            investigation=investigation,
+                            source_entity=seed_entity,
+                            target_entity=url_entity,
+                            relationship_type="associated_with",
+                            defaults={
+                                "confidence_score": 0.7,
+                                "properties": {"source": "auto_recon", "tool": "target"},
+                            },
+                        )
+
+                existing = {
+                    (e.entity_type, e.value): e
+                    for e in Entity.objects.filter(investigation=investigation)
+                }
+
+                tools = results.get("tools") or {}
+                aggregate_technologies = set()
+                aggregate_ports = {}
+                aggregate_services = []
+                aggregate_dns = []
+                aggregate_whois = None
+                for tool_name, tool_data in tools.items():
+                    items = tool_data.get("results") if isinstance(tool_data, dict) else None
+                    if not isinstance(items, list):
+                        continue
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+                        raw_value = item.get("value")
+                        if not raw_value:
+                            continue
+                        value = str(raw_value).strip()
+                        raw_type = str(item.get("type") or "other").lower()
+                        if raw_type == "service" and value.startswith(("http://", "https://")):
+                            entity_type = "url"
+                        elif raw_type == "port":
+                            entity_type = "port"
+                        elif raw_type == "service":
+                            entity_type = "service"
+                        elif raw_type in {
+                            "domain",
+                            "ip",
+                            "email",
+                            "person",
+                            "organization",
+                            "phone",
+                            "url",
+                            "port",
+                            "service",
+                            "hash",
+                            "file",
+                            "cryptocurrency",
+                            "social_media",
+                            "geolocation",
+                            "other",
+                        }:
+                            entity_type = raw_type
+                        else:
+                            entity_type = "other"
+
+                        key = (entity_type, value)
+                        entity = existing.get(key)
+                        if not entity:
+                            properties = {
+                                "tool": tool_name,
+                                "raw_type": raw_type,
+                                **(item.get("properties") or {}),
+                            }
+                            try:
+                                entity, _ = Entity.objects.get_or_create(
+                                    investigation=investigation,
+                                    entity_type=entity_type,
+                                    value=value,
+                                    defaults={
+                                        "source": tool_name,
+                                        "confidence_score": float(item.get("confidence") or 0.6),
+                                        "properties": properties,
+                                    },
+                                )
+                            except IntegrityError:
+                                entity = Entity.objects.filter(
+                                    investigation=investigation,
+                                    entity_type=entity_type,
+                                    value=value,
+                                ).first()
+                            if entity:
+                                existing[key] = entity
+                        else:
+                            props = entity.properties or {}
+                            new_props = item.get("properties") or {}
+                            if props != {**props, **new_props}:
+                                props.update(new_props)
+                                props["tool"] = props.get("tool") or tool_name
+                                props["raw_type"] = props.get("raw_type") or raw_type
+                                entity.properties = props
+                                if not entity.source:
+                                    entity.source = tool_name
+                                entity.save(update_fields=["properties", "source", "updated_at"])
+
+                        if seed_entity.id != entity.id:
+                            Relationship.objects.get_or_create(
+                                investigation=investigation,
+                                source_entity=seed_entity,
+                                target_entity=entity,
+                                relationship_type="associated_with",
+                                defaults={
+                                    "confidence_score": float(item.get("confidence") or 0.6),
+                                    "properties": {"source": "auto_recon", "tool": tool_name},
+                                },
+                            )
+
+                        if tool_name == "wappalyzer":
+                            if raw_type in {"technology", "other"}:
+                                aggregate_technologies.add(value)
+                        if tool_name == "nmap":
+                            port = item.get("properties", {}).get("port")
+                            service_name = item.get("properties", {}).get("service_name")
+                            ip_value = item.get("properties", {}).get("ip")
+                            if port:
+                                aggregate_ports.setdefault(str(port), {"port": port, "services": set(), "ips": set()})
+                                if service_name:
+                                    aggregate_ports[str(port)]["services"].add(str(service_name))
+                                if ip_value:
+                                    aggregate_ports[str(port)]["ips"].add(str(ip_value))
+                            if raw_type == "service":
+                                aggregate_services.append(
+                                    {
+                                        "value": value,
+                                        "service_name": service_name,
+                                        "port": port,
+                                        "ip": ip_value,
+                                    }
+                                )
+                        if tool_name == "dns":
+                            dns_a = item.get("properties", {}).get("dns_a")
+                            dns_mx = item.get("properties", {}).get("dns_mx")
+                            dns_ns = item.get("properties", {}).get("dns_ns")
+                            aggregate_dns.append(
+                                {
+                                    "domain": value,
+                                    "dns_a": dns_a,
+                                    "dns_mx": dns_mx,
+                                    "dns_ns": dns_ns,
+                                    "fuzzer": item.get("properties", {}).get("fuzzer"),
+                                }
+                            )
+                        if tool_name == "whois" and not aggregate_whois:
+                            aggregate_whois = item.get("properties", {}).get("raw")
+
+                seed_props = seed_entity.properties or {}
+                if aggregate_technologies:
+                    seed_props["technologies"] = sorted(aggregate_technologies)
+                if aggregate_ports:
+                    formatted_ports = []
+                    for port_key, data in aggregate_ports.items():
+                        formatted_ports.append(
+                            {
+                                "port": data["port"],
+                                "services": sorted(list(data["services"])) if data["services"] else [],
+                                "ips": sorted(list(data["ips"])) if data["ips"] else [],
+                            }
+                        )
+                    seed_props["open_ports"] = sorted(formatted_ports, key=lambda p: p["port"])
+                if aggregate_services:
+                    seed_props["services"] = aggregate_services[:200]
+                if aggregate_dns:
+                    seed_props["dns_records"] = aggregate_dns[:200]
+                if aggregate_whois:
+                    seed_props["whois_raw"] = aggregate_whois
+                if seed_props != (seed_entity.properties or {}):
+                    seed_entity.properties = seed_props
+                    seed_entity.save(update_fields=["properties", "updated_at"])
+
+                if url_entity:
+                    url_props = url_entity.properties or {}
+                    if aggregate_technologies:
+                        url_props["technologies"] = sorted(aggregate_technologies)
+                    if aggregate_ports:
+                        formatted_ports = []
+                        for port_key, data in aggregate_ports.items():
+                            formatted_ports.append(
+                                {
+                                    "port": data["port"],
+                                    "services": sorted(list(data["services"])) if data["services"] else [],
+                                    "ips": sorted(list(data["ips"])) if data["ips"] else [],
+                                }
+                            )
+                        url_props["open_ports"] = sorted(formatted_ports, key=lambda p: p["port"])
+                    if aggregate_services:
+                        url_props["services"] = aggregate_services[:200]
+                    if aggregate_dns:
+                        url_props["dns_records"] = aggregate_dns[:200]
+                    if aggregate_whois:
+                        url_props["whois_raw"] = aggregate_whois
+                    if url_props != (url_entity.properties or {}):
+                        url_entity.properties = url_props
+                        url_entity.save(update_fields=["properties", "updated_at"])
+
+                if aggregate_technologies:
+                    for tech in aggregate_technologies:
+                        tech_value = f"tech:{tech}"
+                        key = ("other", tech_value)
+                        tech_entity = existing.get(key)
+                        if not tech_entity:
+                            tech_entity = Entity.objects.create(
+                                investigation=investigation,
+                                entity_type="other",
+                                value=tech_value,
+                                source="wappalyzer",
+                                confidence_score=0.8,
+                                properties={"category": "technology", "label": tech},
+                            )
+                            existing[key] = tech_entity
+                        Relationship.objects.get_or_create(
+                            investigation=investigation,
+                            source_entity=seed_entity,
+                            target_entity=tech_entity,
+                            relationship_type="uses",
+                            defaults={
+                                "confidence_score": 0.8,
+                                "properties": {"source": "auto_recon", "tool": "wappalyzer"},
+                            },
+                        )
+
+                if aggregate_ports:
+                    for port_item in aggregate_ports.values():
+                        port_number = str(port_item.get("port"))
+                        port_value = f"port:{port_number}"
+                        key = ("port", port_value)
+                        port_entity = existing.get(key)
+                        if not port_entity:
+                            port_entity = Entity.objects.create(
+                                investigation=investigation,
+                                entity_type="port",
+                                value=port_value,
+                                source="nmap",
+                                confidence_score=0.8,
+                                properties={
+                                    "category": "port",
+                                    "port": port_item.get("port"),
+                                    "services": sorted(list(port_item.get("services") or [])),
+                                    "ips": sorted(list(port_item.get("ips") or [])),
+                                },
+                            )
+                            existing[key] = port_entity
+                        Relationship.objects.get_or_create(
+                            investigation=investigation,
+                            source_entity=seed_entity,
+                            target_entity=port_entity,
+                            relationship_type="exposes",
+                            defaults={
+                                "confidence_score": 0.8,
+                                "properties": {"source": "auto_recon", "tool": "nmap"},
+                            },
+                        )
+
+                cache.delete(f"investigation_entities_{investigation.id}")
+                cache.delete(f"entity_stats_{investigation.id}")
+                for graph_limit in (100, 200, 500, 1000):
+                    cache.delete(f"entity_graph_{investigation.id}_{graph_limit}")
+
+            return Response(results, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Auto recon failed: {e}")
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, HasAPIAccess])
+def osint_catalog(request):
+    target = request.query_params.get("target")
+    service = OsintCatalogService()
+    data = service.build_catalog(target=target)
+    return Response(data, status=status.HTTP_200_OK)
+
 
 
 # Create temporary serializers for missing ones
 class BulkExecutionSerializer(serializers.Serializer):
-    transform_ids = serializers.ListField(child=serializers.IntegerField())
-    input_data = serializers.JSONField()
+    transform_names = serializers.ListField(child=serializers.CharField())
+    input = serializers.JSONField()
+    parameters = serializers.JSONField(required=False)
 
 
 class ExecutionControlSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=["cancel", "retry"])
-
-
-# Mock task functions for now
-def execute_transform_task(execution_id):
-    pass
-
-
-def bulk_execute_transforms_task(execution_ids):
-    pass
 
 
 logger = logging.getLogger(__name__)
@@ -68,9 +393,7 @@ class InvestigationListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         """Filter investigations by user and search parameters"""
-        # Temporarily allow all investigations for development
-        queryset = Investigation.objects.all()
-        # queryset = Investigation.objects.filter(created_by=self.request.user)
+        queryset = Investigation.objects.filter(created_by=self.request.user)
 
         # Search functionality
         search = self.request.query_params.get("search")
@@ -78,7 +401,8 @@ class InvestigationListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(
                 Q(name__icontains=search)
                 | Q(description__icontains=search)
-                | Q(target__icontains=search)
+                | Q(metadata__target__icontains=search)
+                | Q(metadata__case_number__icontains=search)
             )
 
         # Filter by status
@@ -86,10 +410,9 @@ class InvestigationListCreateView(generics.ListCreateAPIView):
         if status_filter:
             queryset = queryset.filter(status=status_filter)
 
-        # Filter by priority - temporarily disabled (field not in model)
-        # priority_filter = self.request.query_params.get('priority')
-        # if priority_filter:
-        #     queryset = queryset.filter(priority=priority_filter)
+        priority_filter = self.request.query_params.get("priority")
+        if priority_filter:
+            queryset = queryset.filter(metadata__priority=priority_filter)
 
         # Date range filtering
         date_from = self.request.query_params.get("date_from")
@@ -137,20 +460,82 @@ class InvestigationListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         """Set the investigation creator"""
-        # Temporarily create without user for development
-        from django.contrib.auth import get_user_model
-
-        User = get_user_model()
-        default_user, created = User.objects.get_or_create(
-            username="admin", defaults={"email": "admin@osint.com", "is_staff": True}
-        )
-        investigation = serializer.save(created_by=default_user)
+        investigation = serializer.save(created_by=self.request.user)
 
         logger.info(f"Investigation '{investigation.name}' created")
 
         # Clear user's investigation cache
-        cache_key = f"user_investigations_{default_user.id}"
+        cache_key = f"user_investigations_{self.request.user.id}"
         cache.delete(cache_key)
+
+
+class ExecuteDorksView(generics.GenericAPIView):
+    """
+    Endpoint to execute Google Dorks
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, investigation_id, *args, **kwargs):
+        dorks = request.data.get('dorks', [])
+        if not dorks:
+            return Response(
+                {"error": "No dorks provided"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
+        
+        # Ensure Google Search transform exists
+        transform, _ = Transform.objects.get_or_create(
+            name="google_search",
+            defaults={
+                "display_name": "Google Search",
+                "description": "Execute Google Search queries (Dorks)",
+                "category": "search",
+                "input_type": "any",
+                "output_types": ["url"],
+                "tool_name": "google_search",
+                "command_template": "google_search {value}",
+                "is_enabled": True
+            }
+        )
+        
+        # Find a suitable input entity (e.g. the seed domain)
+        input_entity = investigation.entities.filter(is_seed=True).first()
+        if not input_entity:
+            # Fallback: create a dummy entity representing the target
+             input_entity, _ = Entity.objects.get_or_create(
+                investigation=investigation,
+                entity_type="domain",
+                value=request.data.get("target_domain", "unknown_target"),
+                defaults={"is_seed": True}
+             )
+
+        execution_ids = []
+        for dork in dorks:
+            query = dork.get("query", dork) if isinstance(dork, dict) else dork
+            
+            # Create execution record
+            execution = TransformExecution.objects.create(
+                investigation=investigation,
+                transform_name=transform.name,
+                input_entity=input_entity,
+                status="pending",
+                parameters={"query": query}
+            )
+            
+            # Queue task
+            execute_transform.delay(
+                execution_id=str(execution.id),
+                transform_name=transform.name,
+                input_value=query
+            )
+            execution_ids.append(execution.id)
+            
+        return Response({
+            "message": f"Queued {len(execution_ids)} dork searches",
+            "execution_ids": execution_ids
+        }, status=status.HTTP_202_ACCEPTED)
 
 
 class InvestigationDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -164,15 +549,14 @@ class InvestigationDetailView(generics.RetrieveUpdateDestroyAPIView):
         return InvestigationDetailSerializer
 
     def get_queryset(self):
-        # Temporarily allow all investigations for development
         return (
-            Investigation.objects.all()
+            Investigation.objects.filter(created_by=self.request.user)
             .select_related("created_by")
             .prefetch_related(
                 "entities",
                 "relationships",
-                "transform_executions__transform",
-                "transform_executions__created_by",
+                "transform_executions",
+                "transform_executions__input_entity",
             )
         )
 
@@ -235,7 +619,7 @@ class TransformExecutionListCreateView(generics.ListCreateAPIView):
         # Filter by transform
         transform_filter = self.request.query_params.get("transform")
         if transform_filter:
-            queryset = queryset.filter(transform_id=transform_filter)
+            queryset = queryset.filter(transform_name=transform_filter)
 
         # Date range filtering
         date_from = self.request.query_params.get("date_from")
@@ -277,7 +661,7 @@ class TransformExecutionListCreateView(generics.ListCreateAPIView):
         else:
             queryset = queryset.order_by("-created_at")
 
-        return queryset.select_related("investigation", "transform", "created_by")
+        return queryset.select_related("investigation", "input_entity")
 
     def perform_create(self, serializer):
         """Create and execute transform"""
@@ -289,11 +673,18 @@ class TransformExecutionListCreateView(generics.ListCreateAPIView):
         )
 
         execution = serializer.save(
-            investigation=investigation, created_by=self.request.user
+            investigation=investigation
         )
 
         # Execute transform asynchronously
-        execute_transform_task.delay(execution.id)
+        task = execute_transform.delay(
+            str(execution.id),
+            execution.transform_name,
+            execution.input_entity.value,
+            execution.parameters,
+        )
+        execution.celery_task_id = task.id
+        execution.save(update_fields=["celery_task_id", "updated_at"])
 
         logger.info(
             f"Transform execution {execution.id} created and queued for investigation {investigation.name}"
@@ -314,9 +705,9 @@ class TransformExecutionDetailView(generics.RetrieveUpdateDestroyAPIView):
             Investigation, id=investigation_id, created_by=self.request.user
         )
 
-        return TransformExecution.objects.filter(
-            investigation=investigation
-        ).select_related("investigation", "transform", "created_by")
+        return TransformExecution.objects.filter(investigation=investigation).select_related(
+            "investigation", "input_entity"
+        )
 
     def update(self, request, *args, **kwargs):
         """Only allow status updates"""
@@ -383,11 +774,7 @@ def investigation_stats(request, investigation_id):
             "recent": executions.filter(
                 created_at__gte=timezone.now() - timedelta(days=7)
             ).count(),
-            "avg_duration": executions.filter(
-                status="completed", started_at__isnull=False, completed_at__isnull=False
-            ).aggregate(avg_duration=Avg("completed_at") - Avg("started_at"))[
-                "avg_duration"
-            ],
+            "avg_duration": None,
         },
         "entities": {
             "total": entities.count(),
@@ -417,6 +804,20 @@ def investigation_stats(request, investigation_id):
         },
     }
 
+    duration_rows = executions.filter(
+        status="completed", started_at__isnull=False, completed_at__isnull=False
+    ).values_list("started_at", "completed_at")
+    total_seconds = 0.0
+    duration_count = 0
+    for started_at, completed_at in duration_rows:
+        if started_at and completed_at:
+            delta = completed_at - started_at
+            total_seconds += delta.total_seconds()
+            duration_count += 1
+    stats["executions"]["avg_duration"] = (
+        total_seconds / duration_count if duration_count > 0 else 0
+    )
+
     # Cache for 5 minutes
     cache.set(cache_key, stats, 300)
 
@@ -434,25 +835,55 @@ def bulk_execute_transforms(request, investigation_id):
 
     serializer = BulkExecutionSerializer(data=request.data)
     if serializer.is_valid():
-        transform_ids = serializer.validated_data["transform_ids"]
-        input_data = serializer.validated_data["input_data"]
+        transform_names = serializer.validated_data["transform_names"]
+        input_payload = serializer.validated_data["input"]
+        parameters = serializer.validated_data.get("parameters") or {}
+
+        input_entity_id = input_payload.get("input_entity_id")
+        input_entity = None
+        if input_entity_id:
+            input_entity = get_object_or_404(
+                Entity, id=input_entity_id, investigation=investigation
+            )
+        else:
+            entity_type = input_payload.get("entity_type")
+            value = input_payload.get("value")
+            if not entity_type or not value:
+                return Response(
+                    {"error": "input must include input_entity_id or entity_type and value"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            input_entity, _ = Entity.objects.get_or_create(
+                investigation=investigation,
+                entity_type=entity_type,
+                value=value,
+                defaults={"source": "bulk_execution", "confidence_score": 1.0},
+            )
 
         # Create execution records
         executions = []
-        for transform_id in transform_ids:
-            transform = get_object_or_404(Transform, id=transform_id, is_enabled=True)
-
+        for transform_name in transform_names:
+            transform = get_object_or_404(Transform, name=transform_name, is_enabled=True)
             execution = TransformExecution.objects.create(
                 investigation=investigation,
-                transform=transform,
-                input_data=input_data,
-                created_by=request.user,
+                transform_name=transform.name,
+                input_entity=input_entity,
+                parameters=parameters,
             )
             executions.append(execution)
 
         # Execute transforms asynchronously
-        execution_ids = [e.id for e in executions]
-        bulk_execute_transforms_task.delay(execution_ids)
+        execution_ids = []
+        for execution in executions:
+            task = execute_transform.delay(
+                str(execution.id),
+                execution.transform_name,
+                execution.input_entity.value,
+                execution.parameters,
+            )
+            execution.celery_task_id = task.id
+            execution.save(update_fields=["celery_task_id", "updated_at"])
+            execution_ids.append(execution.id)
 
         logger.info(
             f"Bulk execution of {len(executions)} transforms queued for investigation {investigation.name}"
@@ -493,7 +924,17 @@ def control_execution(request, investigation_id, execution_id):
                 execution.completed_at = timezone.now()
                 execution.save()
 
-                # TODO: Cancel the actual task if it's running
+                if execution.celery_task_id:
+                    try:
+                        from celery import current_app
+
+                        current_app.control.revoke(
+                            execution.celery_task_id, terminate=True
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            f"Failed to revoke Celery task {execution.celery_task_id}: {str(exc)}"
+                        )
 
                 logger.info(
                     f"Execution {execution_id} cancelled by user {request.user.username}"
@@ -512,11 +953,18 @@ def control_execution(request, investigation_id, execution_id):
                 execution.error_message = None
                 execution.started_at = None
                 execution.completed_at = None
-                execution.output_data = None
+                execution.results = {}
                 execution.save()
 
                 # Re-queue the task
-                execute_transform_task.delay(execution.id)
+                task = execute_transform.delay(
+                    str(execution.id),
+                    execution.transform_name,
+                    execution.input_entity.value,
+                    execution.parameters,
+                )
+                execution.celery_task_id = task.id
+                execution.save(update_fields=["celery_task_id", "updated_at"])
 
                 logger.info(
                     f"Execution {execution_id} retried by user {request.user.username}"
@@ -676,8 +1124,14 @@ def execution_logs(request, investigation_id, execution_id):
     logs_data = {
         "execution_id": execution.id,
         "status": execution.status,
-        "input_data": execution.input_data,
-        "output_data": execution.output_data,
+        "transform_name": execution.transform_name,
+        "input_entity": {
+            "id": str(execution.input_entity.id),
+            "type": execution.input_entity.entity_type,
+            "value": execution.input_entity.value,
+        },
+        "parameters": execution.parameters,
+        "results": execution.results,
         "error_message": execution.error_message,
         "created_at": execution.created_at,
         "started_at": execution.started_at,

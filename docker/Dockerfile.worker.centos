@@ -1,0 +1,176 @@
+# Dockerfile.worker.centos
+FROM golang:1.25-alpine AS go-builder
+RUN apk add --no-cache git
+RUN go install github.com/tomnomnom/assetfinder@latest
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+RUN go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+RUN go install github.com/OJ/gobuster/v3@latest
+RUN go install github.com/tomnomnom/waybackurls@latest
+RUN go install github.com/owasp-amass/amass/v3/...@master
+# Update to Nuclei v3
+RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
+FROM rockylinux:9
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    C_FORCE_ROOT=1
+
+# Install system dependencies and Python 3.11
+RUN dnf update -y && \
+    dnf install -y epel-release && \
+    dnf config-manager --set-enabled crb || echo "CRB not found or already enabled" && \
+    dnf install -y \
+    python3.11 \
+    python3.11-pip \
+    python3.11-devel \
+    gcc \
+    gcc-c++ \
+    git \
+    make \
+    openssl-devel \
+    bzip2-devel \
+    libffi-devel \
+    zlib-devel \
+    postgresql-devel \
+    && dnf clean all
+
+# Install OSINT Tools dependencies
+RUN dnf install -y \
+    ca-certificates \
+    nmap \
+    nmap-ncat \
+    perl-Image-ExifTool \
+    whois \
+    bind-utils \
+    perl \
+    perl-JSON \
+    perl-XML-Writer \
+    ruby \
+    ruby-devel \
+    libcurl-devel \
+    iputils \
+    iproute \
+    findutils \
+    which \
+    traceroute \
+    libpcap-devel \
+    && dnf clean all
+
+# Install EPEL for some tools like ike-scan (if available) or deps
+RUN dnf install -y epel-release && \
+    dnf install -y ike-scan masscan || echo "Some tools not in EPEL, will compile if needed"
+
+# Install minimal ruby gems for WhatWeb if needed (json is usually built-in in modern ruby, but let's ensure)
+RUN gem install json addressable
+
+# Symlinks for Python
+RUN alternatives --set python3 /usr/bin/python3.11 || ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/pip3.11 /usr/bin/pip3 && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/pip3.11 /usr/bin/pip
+
+# Copy Go binaries
+COPY --from=go-builder /go/bin/assetfinder /usr/local/bin/
+COPY --from=go-builder /go/bin/subfinder /usr/local/bin/
+COPY --from=go-builder /go/bin/httpx /usr/local/bin/httpx-pd
+COPY --from=go-builder /go/bin/gobuster /usr/local/bin/
+COPY --from=go-builder /go/bin/waybackurls /usr/local/bin/
+COPY --from=go-builder /go/bin/amass /usr/local/bin/
+COPY --from=go-builder /go/bin/nuclei /usr/local/bin/
+
+# Update Nuclei templates
+RUN nuclei -update-templates || echo "Nuclei templates update failed, continuing..."
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt /app/
+COPY requirements/ /app/requirements/
+RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir psycopg2-binary celery redis dnstwist[full] python-Wappalyzer requests holehe
+
+# Install other tools from source if needed (e.g., recon-ng, spiderfoot)
+# These are often large, so we might want to keep them in /opt or /tools
+WORKDIR /tools
+RUN git clone https://github.com/lanmaster53/recon-ng.git && \
+    pip3 install -r recon-ng/REQUIREMENTS && \
+    chmod +x recon-ng/recon-ng
+
+# Install basic recon-ng modules script (to be run manually or at startup)
+RUN echo "#!/bin/bash" > /tools/recon-ng/install_modules.sh && \
+    echo "echo 'marketplace install hackertarget' > /tmp/install_modules.rc" >> /tools/recon-ng/install_modules.sh && \
+    echo "echo 'marketplace install profiler' >> /tmp/install_modules.rc" >> /tools/recon-ng/install_modules.sh && \
+    echo "echo 'marketplace install whois_pocs' >> /tmp/install_modules.rc" >> /tools/recon-ng/install_modules.sh && \
+    echo "echo 'marketplace install reporting' >> /tmp/install_modules.rc" >> /tools/recon-ng/install_modules.sh && \
+    echo "/tools/recon-ng/recon-ng -r /tmp/install_modules.rc --no-analytics" >> /tools/recon-ng/install_modules.sh && \
+    echo "rm /tmp/install_modules.rc" >> /tools/recon-ng/install_modules.sh && \
+    chmod +x /tools/recon-ng/install_modules.sh
+
+# Install recon-ng modules during build - DISABLED for speed
+# RUN /tools/recon-ng/install_modules.sh || echo "Warning: Failed to install recon-ng modules during build, will try at runtime if needed"
+
+RUN git clone https://github.com/smicallef/spiderfoot.git && \
+    pip3 install -r spiderfoot/requirements.txt && \
+    chmod +x spiderfoot/sf.py
+
+# Install Sherlock
+RUN git clone https://github.com/sherlock-project/sherlock.git /tools/sherlock && \
+    cd /tools/sherlock && \
+    pip3 install . && \
+    chmod +x /tools/sherlock/sherlock_project/sherlock.py && \
+    ln -sf /tools/sherlock/sherlock_project/sherlock.py /usr/local/bin/sherlock
+
+# Install Nikto
+RUN git clone https://github.com/sullo/nikto.git /tools/nikto && \
+    chmod +x /tools/nikto/program/nikto.pl && \
+    ln -sf /tools/nikto/program/nikto.pl /usr/local/bin/nikto
+
+# Install WhatWeb
+RUN git clone https://github.com/urbanadventurer/WhatWeb.git /tools/whatweb && \
+    chmod +x /tools/whatweb/whatweb && \
+    ln -sf /tools/whatweb/whatweb /usr/local/bin/whatweb
+
+# Install Dirb
+# Note: Dirb is old and might need some tweaks to compile on modern GCC, but let's try standard way.
+# If it fails, we might need to apply patches or use a precompiled binary, but compiling is safer for "centos/rocky".
+RUN git clone https://github.com/v0re/dirb.git /tools/dirb && \
+    cd /tools/dirb && \
+    chmod +x configure && \
+    CFLAGS="-fcommon" ./configure && \
+    make && \
+    ln -sf /tools/dirb/dirb /usr/local/bin/dirb
+
+# Install TheHarvester (Pin version for Python 3.11 compatibility)
+RUN git clone https://github.com/laramies/theHarvester.git /tools/theHarvester && \
+    cd /tools/theHarvester && \
+    git checkout 4.6.0 && \
+    pip3 install -r requirements/base.txt && \
+    chmod +x theHarvester.py && \
+    ln -sf /tools/theHarvester/theHarvester.py /usr/local/bin/theHarvester
+
+# Install Dmitry (Compile from source as it is old/rare in repos)
+# RUN git clone https://github.com/jaygreig86/dmitry.git /tools/dmitry && \
+#    cd /tools/dmitry && \
+#    ./configure && \
+#    make && \
+#    make install || echo "Dmitry install failed, continuing..."
+
+# Download default wordlist for Dirb (common.txt) if not present, though dirb repo usually has wordlists/
+# Dirb repo structure: wordlists/common.txt
+# We will use /tools/dirb/wordlists/common.txt in wrapper.
+
+ENV PATH="/tools/recon-ng:/tools/spiderfoot:/tools/nikto/program:/tools/whatweb:/tools/dirb:${PATH}"
+
+WORKDIR /app
+COPY . /app/
+
+# Create log directory
+RUN mkdir -p /var/log/osint_platform && \
+    chmod 777 /var/log/osint_platform
+
+# Create user for celery (optional, running as root in container is often done but not best practice)
+# For simplicity in this "lift", we run as root or create a user.
+# Celery warns about running as root, but C_FORCE_ROOT=1 handles it.
+
+CMD ["celery", "-A", "osint_platform.celery_app:app", "worker", "-l", "info", "-Q", "transforms,maintenance,monitoring"]

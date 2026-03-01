@@ -23,6 +23,12 @@ class InvestigationListSerializer(serializers.ModelSerializer):
     entities_count = serializers.IntegerField(read_only=True)
     relationships_count = serializers.IntegerField(read_only=True)
     executions_count = serializers.IntegerField(read_only=True)
+    priority = serializers.SerializerMethodField()
+    target = serializers.SerializerMethodField()
+    jurisdiction = serializers.SerializerMethodField()
+    estimated_loss = serializers.SerializerMethodField()
+    victim_count = serializers.SerializerMethodField()
+    case_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Investigation
@@ -31,6 +37,12 @@ class InvestigationListSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "status",
+            "priority",
+            "target",
+            "jurisdiction",
+            "estimated_loss",
+            "victim_count",
+            "case_number",
             "created_by",
             "created_at",
             "updated_at",
@@ -39,6 +51,24 @@ class InvestigationListSerializer(serializers.ModelSerializer):
             "executions_count",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_priority(self, obj):
+        return (obj.metadata or {}).get("priority")
+
+    def get_target(self, obj):
+        return (obj.metadata or {}).get("target")
+
+    def get_jurisdiction(self, obj):
+        return (obj.metadata or {}).get("jurisdiction")
+
+    def get_estimated_loss(self, obj):
+        return (obj.metadata or {}).get("estimated_loss")
+
+    def get_victim_count(self, obj):
+        return (obj.metadata or {}).get("victim_count")
+
+    def get_case_number(self, obj):
+        return (obj.metadata or {}).get("case_number")
 
 
 class InvestigationDetailSerializer(serializers.ModelSerializer):
@@ -49,6 +79,12 @@ class InvestigationDetailSerializer(serializers.ModelSerializer):
     relationships = RelationshipSerializer(many=True, read_only=True)
     executions = serializers.SerializerMethodField()
     metadata = serializers.JSONField(required=False)
+    priority = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    target = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    jurisdiction = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    estimated_loss = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    victim_count = serializers.IntegerField(required=False, allow_null=True)
+    case_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Investigation
@@ -60,6 +96,12 @@ class InvestigationDetailSerializer(serializers.ModelSerializer):
             "created_by",
             "created_at",
             "updated_at",
+            "priority",
+            "target",
+            "jurisdiction",
+            "estimated_loss",
+            "victim_count",
+            "case_number",
             "metadata",
             "entities",
             "relationships",
@@ -69,7 +111,7 @@ class InvestigationDetailSerializer(serializers.ModelSerializer):
 
     def get_executions(self, obj):
         """Get recent executions for the investigation"""
-        executions = obj.executions.select_related("transform", "created_by").order_by(
+        executions = obj.transform_executions.select_related("input_entity").order_by(
             "-created_at"
         )[:10]
         return TransformExecutionListSerializer(executions, many=True).data
@@ -92,7 +134,20 @@ class InvestigationDetailSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Metadata must be a JSON object")
 
         # Validate specific metadata fields if needed
-        allowed_keys = ["tags", "priority", "source", "notes", "custom_fields"]
+        allowed_keys = [
+            "tags",
+            "priority",
+            "target",
+            "jurisdiction",
+            "estimated_loss",
+            "victim_count",
+            "case_number",
+            "source",
+            "notes",
+            "custom_fields",
+            "auto_recon",
+            "auto_recon_updated_at",
+        ]
         for key in value.keys():
             if key not in allowed_keys:
                 raise serializers.ValidationError(
@@ -101,13 +156,61 @@ class InvestigationDetailSerializer(serializers.ModelSerializer):
 
         return value
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        metadata = instance.metadata or {}
+        data.setdefault("priority", metadata.get("priority"))
+        data.setdefault("target", metadata.get("target"))
+        data.setdefault("jurisdiction", metadata.get("jurisdiction"))
+        data.setdefault("estimated_loss", metadata.get("estimated_loss"))
+        data.setdefault("victim_count", metadata.get("victim_count"))
+        data.setdefault("case_number", metadata.get("case_number"))
+        return data
+
+    def update(self, instance, validated_data):
+        metadata = validated_data.get("metadata") or instance.metadata or {}
+        for key in [
+            "priority",
+            "target",
+            "jurisdiction",
+            "estimated_loss",
+            "victim_count",
+            "case_number",
+        ]:
+            if key in validated_data:
+                value = validated_data.get(key)
+                if value in ("", None):
+                    metadata.pop(key, None)
+                else:
+                    metadata[key] = value
+        validated_data["metadata"] = metadata
+        return super().update(instance, validated_data)
+
 
 class InvestigationCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating investigations"""
 
+    priority = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    target = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    jurisdiction = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    estimated_loss = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    victim_count = serializers.IntegerField(required=False, allow_null=True)
+    case_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     class Meta:
         model = Investigation
-        fields = ["name", "description", "metadata"]
+        fields = [
+            "id",
+            "name",
+            "description",
+            "metadata",
+            "priority",
+            "target",
+            "jurisdiction",
+            "estimated_loss",
+            "victim_count",
+            "case_number",
+        ]
 
     def validate_name(self, value):
         """Validate investigation name"""
@@ -127,6 +230,19 @@ class InvestigationCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create investigation with current user as creator"""
+        metadata = validated_data.get("metadata") or {}
+        for key in [
+            "priority",
+            "target",
+            "jurisdiction",
+            "estimated_loss",
+            "victim_count",
+            "case_number",
+        ]:
+            value = validated_data.pop(key, None)
+            if value not in ("", None):
+                metadata[key] = value
+        validated_data["metadata"] = metadata
         validated_data["created_by"] = self.context["request"].user
         return super().create(validated_data)
 
@@ -134,20 +250,17 @@ class InvestigationCreateSerializer(serializers.ModelSerializer):
 class TransformExecutionListSerializer(serializers.ModelSerializer):
     """Serializer for TransformExecution list view"""
 
-    transform = serializers.StringRelatedField()
-    created_by = UserSerializer(read_only=True)
-    investigation_name = serializers.CharField(
-        source="investigation.name", read_only=True
-    )
+    investigation_id = serializers.UUIDField(source="investigation.id", read_only=True)
+    input_entity = serializers.SerializerMethodField()
 
     class Meta:
         model = TransformExecution
         fields = [
             "id",
-            "transform",
+            "investigation_id",
+            "transform_name",
+            "input_entity",
             "status",
-            "created_by",
-            "investigation_name",
             "created_at",
             "started_at",
             "completed_at",
@@ -155,28 +268,30 @@ class TransformExecutionListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "started_at", "completed_at"]
 
+    def get_input_entity(self, obj):
+        entity = getattr(obj, "input_entity", None)
+        if not entity:
+            return None
+        return {"id": str(entity.id), "type": entity.entity_type, "value": entity.value}
+
 
 class TransformExecutionDetailSerializer(serializers.ModelSerializer):
     """Serializer for TransformExecution detail view"""
 
-    transform = serializers.StringRelatedField()
-    created_by = UserSerializer(read_only=True)
-    investigation = InvestigationListSerializer(read_only=True)
-    input_data = serializers.JSONField()
-    output_data = serializers.JSONField(read_only=True)
-    error_message = serializers.CharField(read_only=True)
+    investigation_id = serializers.UUIDField(source="investigation.id", read_only=True)
+    input_entity = serializers.SerializerMethodField()
 
     class Meta:
         model = TransformExecution
         fields = [
             "id",
-            "investigation",
-            "transform",
+            "investigation_id",
+            "transform_name",
             "status",
-            "created_by",
-            "input_data",
-            "output_data",
             "error_message",
+            "parameters",
+            "results",
+            "input_entity",
             "created_at",
             "started_at",
             "completed_at",
@@ -187,70 +302,119 @@ class TransformExecutionDetailSerializer(serializers.ModelSerializer):
             "created_at",
             "started_at",
             "completed_at",
-            "output_data",
             "error_message",
             "celery_task_id",
         ]
+
+    def get_input_entity(self, obj):
+        entity = getattr(obj, "input_entity", None)
+        if not entity:
+            return None
+        return {"id": str(entity.id), "type": entity.entity_type, "value": entity.value}
 
 
 class TransformExecutionCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating transform executions"""
 
-    transform_id = serializers.IntegerField(write_only=True)
-    investigation_id = serializers.IntegerField(write_only=True)
+    input_entity = serializers.SerializerMethodField(read_only=True)
+    input_entity_id = serializers.UUIDField(write_only=True, required=False)
+    input = serializers.DictField(write_only=True, required=False)
+    parameters = serializers.JSONField(required=False)
 
     class Meta:
         model = TransformExecution
-        fields = ["transform_id", "investigation_id", "input_data"]
+        fields = [
+            "id",
+            "transform_name",
+            "status",
+            "input_entity",
+            "input_entity_id",
+            "input",
+            "parameters",
+            "results",
+            "error_message",
+            "created_at",
+            "started_at",
+            "completed_at",
+            "celery_task_id",
+        ]
+        read_only_fields = [
+            "id",
+            "status",
+            "input_entity",
+            "results",
+            "error_message",
+            "created_at",
+            "started_at",
+            "completed_at",
+            "celery_task_id",
+        ]
 
-    def validate_transform_id(self, value):
-        """Validate transform exists and is enabled"""
-        try:
-            transform = Transform.objects.get(id=value)
-            if not transform.is_enabled:
-                raise serializers.ValidationError("Transform is not enabled")
-            return value
-        except Transform.DoesNotExist:
-            raise serializers.ValidationError("Transform not found")
+    def validate_transform_name(self, value):
+        transform_name = value.strip()
+        if not transform_name:
+            raise serializers.ValidationError("transform_name is required")
+        if not Transform.objects.filter(name=transform_name, is_enabled=True).exists():
+            raise serializers.ValidationError("Transform not found or disabled")
+        return transform_name
 
-    def validate_investigation_id(self, value):
-        """Validate investigation exists and user has access"""
-        user = self.context["request"].user
-        try:
-            investigation = Investigation.objects.get(id=value, created_by=user)
-            if investigation.status == "archived":
-                raise serializers.ValidationError(
-                    "Cannot execute transforms on archived investigations"
-                )
-            return value
-        except Investigation.DoesNotExist:
+    def validate(self, attrs):
+        from apps.entities.models import Entity
+
+        view = self.context.get("view")
+        request = self.context.get("request")
+        if not view or not request:
+            raise serializers.ValidationError("Invalid request context")
+
+        investigation_id = view.kwargs.get("investigation_id")
+        investigation = Investigation.objects.filter(
+            id=investigation_id, created_by=request.user
+        ).first()
+        if not investigation:
+            raise serializers.ValidationError("Investigation not found")
+
+        if investigation.status == "archived":
             raise serializers.ValidationError(
-                "Investigation not found or you don't have access"
+                "Cannot execute transforms on archived investigations"
             )
 
-    def validate_input_data(self, value):
-        """Validate input data structure"""
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Input data must be a JSON object")
+        input_entity = None
+        input_entity_id = attrs.pop("input_entity_id", None)
+        input_payload = attrs.pop("input", None)
 
-        # Basic validation - specific validation will be done by the transform
-        required_fields = ["target"]
-        for field in required_fields:
-            if field not in value:
-                raise serializers.ValidationError(f"Missing required field: {field}")
+        if input_entity_id:
+            input_entity = Entity.objects.filter(
+                id=input_entity_id, investigation=investigation
+            ).first()
+            if not input_entity:
+                raise serializers.ValidationError("Input entity not found")
+        elif input_payload:
+            entity_type = input_payload.get("entity_type")
+            value = input_payload.get("value")
+            if not entity_type or not value:
+                raise serializers.ValidationError(
+                    "input must include entity_type and value"
+                )
+            input_entity, _ = Entity.objects.get_or_create(
+                investigation=investigation,
+                entity_type=entity_type,
+                value=value,
+                defaults={"source": "execution", "confidence_score": 1.0},
+            )
+        else:
+            raise serializers.ValidationError("input_entity_id or input is required")
 
-        return value
+        attrs["investigation"] = investigation
+        attrs["input_entity"] = input_entity
+        attrs["parameters"] = attrs.get("parameters") or {}
 
-    def create(self, validated_data):
-        """Create transform execution"""
-        transform_id = validated_data.pop("transform_id")
-        investigation_id = validated_data.pop("investigation_id")
+        return attrs
 
-        validated_data["transform"] = Transform.objects.get(id=transform_id)
-        validated_data["investigation"] = Investigation.objects.get(id=investigation_id)
-        validated_data["created_by"] = self.context["request"].user
-
-        return super().create(validated_data)
+    def get_input_entity(self, obj):
+        entity = getattr(obj, "input_entity", None)
+        if not entity:
+            return None
+        return {"id": str(entity.id), "type": entity.entity_type, "value": entity.value}
 
 
 class InvestigationStatsSerializer(serializers.Serializer):

@@ -1,0 +1,61 @@
+# Dockerfile.backend.centos
+FROM rockylinux:9
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    start="/start"
+
+# Install system dependencies and Python 3.11
+# Rocky Linux 9 has Python 3.9 by default. We install 3.11.
+RUN dnf update -y && \
+    dnf install -y epel-release && \
+    dnf install -y \
+    python3.11 \
+    python3.11-pip \
+    python3.11-devel \
+    gcc \
+    git \
+    make \
+    openssl-devel \
+    bzip2-devel \
+    libffi-devel \
+    zlib-devel \
+    postgresql-devel \
+    nmap \
+    bind-utils \
+    iputils \
+    whois \
+    && dnf clean all
+
+# Create symlinks for python/pip if they don't exist pointing to 3.11
+RUN alternatives --set python3 /usr/bin/python3.11 || ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/pip3.11 /usr/bin/pip3 && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/pip3.11 /usr/bin/pip
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt /app/
+COPY requirements/ /app/requirements/
+RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir psycopg2-binary gunicorn
+
+# Copy project files
+COPY . /app/
+
+# Create log directory
+RUN mkdir -p /var/log/osint_platform && \
+    chmod 777 /var/log/osint_platform
+
+# Add start script
+RUN echo '#!/bin/bash' > /start && \
+    echo 'python manage.py migrate' >> /start && \
+    echo 'python manage.py collectstatic --noinput' >> /start && \
+    echo 'gunicorn osint_platform.wsgi:application --bind 0.0.0.0:8000 --workers 3' >> /start && \
+    chmod +x /start
+
+EXPOSE 8000
+
+CMD ["/start"]

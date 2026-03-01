@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -15,7 +15,6 @@ import {
   Form,
   InputGroup,
   Dropdown,
-  Table,
   Spinner,
   Offcanvas,
   ListGroup,
@@ -49,19 +48,30 @@ import {
   RefreshCw,
   FileDown,
   Share2,
-  ZoomIn
+  ZoomIn,
+  Wifi,
+  Globe,
+  FileText
 } from 'lucide-react';
-import type { Investigation, Entity } from '../types';
-import EntityForm from '../components/EntityForm';
-import Header from '../components/Header';
+import Swal from 'sweetalert2';
+import type { Investigation, Entity, TransformExecution, TransformExecutionStatus, User } from '../types';
+import EntityForm from '../features/investigation/components/EntityForm';
+import Header from '../shared/components/Header';
+import apiService from '../services/api';
 
 // Local type definitions
 interface OSINTTool {
   id: string;
+  transformUuid?: string;
   name: string;
   description: string;
   category: string;
+  inputType: string;
+  outputTypes: string[];
+  requiresApiKey: boolean;
+  apiKeyName?: string;
   parameters: ToolParameter[];
+  defaultParameters: Record<string, any>;
 }
 
 interface ToolParameter {
@@ -89,7 +99,7 @@ const timelineStyles = `
     top: 0;
     bottom: 0;
     width: 2px;
-    background: #6c757d;
+    background: var(--osint-border);
   }
   
   .timeline-item {
@@ -104,173 +114,80 @@ const timelineStyles = `
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    border: 2px solid #212529;
+    border: 2px solid var(--osint-bg);
+    box-shadow: 0 0 5px currentColor;
   }
   
-  .timeline-marker.system { background: #0d6efd; border-color: #0d6efd; }
-  .timeline-marker.osint { background: #198754; border-color: #198754; }
-  .timeline-marker.alert { background: #ffc107; border-color: #ffc107; }
-  .timeline-marker.critical { background: #dc3545; border-color: #dc3545; }
-  .timeline-marker.manual { background: #6f42c1; border-color: #6f42c1; }
+  .timeline-marker.system { background: var(--osint-muted); border-color: var(--osint-muted); color: var(--osint-muted); }
+  .timeline-marker.osint { background: var(--osint-green); border-color: var(--osint-green); color: var(--osint-green); }
+  .timeline-marker.alert { background: var(--osint-amber); border-color: var(--osint-amber); color: var(--osint-amber); }
+  .timeline-marker.critical { background: var(--osint-red); border-color: var(--osint-red); color: var(--osint-red); }
+  .timeline-marker.manual { background: #6f42c1; border-color: #6f42c1; color: #6f42c1; }
   
   .timeline-content {
-    background: #2d3748;
-    border: 1px solid #4a5568;
-    border-radius: 8px;
+    background: var(--osint-glass);
+    border: 1px solid var(--osint-border);
+    border-radius: 4px;
     padding: 12px;
     margin-left: 10px;
+    backdrop-filter: blur(5px);
   }
 `;
 
-// Mock data para herramientas OSINT
-const osintTools: OSINTTool[] = [
-  {
-    id: 'holehe',
-    name: 'Holehe',
-    description: 'Verificar si un email está registrado en diferentes sitios web',
-    category: 'Email Intelligence',
-    parameters: [
-      { name: 'email', type: 'string', required: true, description: 'Email a verificar', placeholder: 'ejemplo@dominio.com' },
-      { name: 'timeout', type: 'number', required: false, description: 'Timeout en segundos', placeholder: '10' },
-      { name: 'only_used', type: 'boolean', required: false, description: 'Solo mostrar sitios donde el email está registrado' }
-    ]
-  },
-  {
-    id: 'assetfinder',
-    name: 'Assetfinder',
-    description: 'Encontrar subdominios relacionados con un dominio',
-    category: 'Domain Intelligence',
-    parameters: [
-      { name: 'domain', type: 'string', required: true, description: 'Dominio objetivo', placeholder: 'ejemplo.com' },
-      { name: 'subs_only', type: 'boolean', required: false, description: 'Solo subdominios (no incluir dominio principal)' },
-      { name: 'sources', type: 'multiselect', required: false, description: 'Fuentes de datos', options: ['crtsh', 'hackertarget', 'threatcrowd', 'wayback'] }
-    ]
-  },
-  {
-    id: 'amass',
-    name: 'Amass',
-    description: 'Enumeración avanzada de subdominios y mapeo de red',
-    category: 'Domain Intelligence',
-    parameters: [
-      { name: 'domain', type: 'string', required: true, description: 'Dominio objetivo', placeholder: 'ejemplo.com' },
-      { name: 'passive', type: 'boolean', required: false, description: 'Solo reconocimiento pasivo' },
-      { name: 'brute', type: 'boolean', required: false, description: 'Fuerza bruta de subdominios' }
-    ]
-  },
-  {
-    id: 'subfinder',
-    name: 'Subfinder',
-    description: 'Descubrimiento rápido de subdominios usando fuentes pasivas',
-    category: 'Domain Intelligence',
-    parameters: [
-      { name: 'domain', type: 'string', required: true, description: 'Dominio objetivo', placeholder: 'ejemplo.com' },
-      { name: 'silent', type: 'boolean', required: false, description: 'Modo silencioso' },
-      { name: 'sources', type: 'multiselect', required: false, description: 'Fuentes específicas', options: ['crtsh', 'virustotal', 'shodan', 'censys'] }
-    ]
-  },
-  {
-    id: 'theharvester',
-    name: 'TheHarvester',
-    description: 'Recopilación de emails, subdominios y hosts desde fuentes públicas',
-    category: 'Email Intelligence',
-    parameters: [
-      { name: 'domain', type: 'string', required: true, description: 'Dominio objetivo', placeholder: 'ejemplo.com' },
-      { name: 'source', type: 'select', required: true, description: 'Fuente de datos', options: ['google', 'bing', 'linkedin', 'twitter', 'all'] },
-      { name: 'limit', type: 'number', required: false, description: 'Límite de resultados', placeholder: '500' }
-    ]
-  },
-  {
-    id: 'recon-ng',
-    name: 'Recon-ng',
-    description: 'Framework modular de reconocimiento web con múltiples módulos',
-    category: 'Web Intelligence',
-    parameters: [
-      { name: 'target', type: 'string', required: true, description: 'Objetivo', placeholder: 'ejemplo.com' },
-      { name: 'module', type: 'select', required: true, description: 'Módulo a ejecutar', options: ['hackertarget', 'shodan_hostname', 'google_site_web', 'bing_domain_web'] },
-      { name: 'options', type: 'string', required: false, description: 'Opciones adicionales', placeholder: 'key=value' }
-    ]
-  },
-  {
-    id: 'spiderfoot',
-    name: 'SpiderFoot',
-    description: 'Automatización de reconocimiento OSINT con más de 200 módulos',
-    category: 'Comprehensive Intelligence',
-    parameters: [
-      { name: 'target', type: 'string', required: true, description: 'Objetivo', placeholder: 'ejemplo.com o 192.168.1.1' },
-      { name: 'modules', type: 'select', required: true, description: 'Tipo de módulos', options: ['footprint', 'investigate', 'passive', 'all'] },
-      { name: 'timeout', type: 'number', required: false, description: 'Timeout en minutos', placeholder: '30' }
-    ]
-  },
-  {
-    id: 'maltego',
-    name: 'Maltego',
-    description: 'Análisis de enlaces y visualización de relaciones entre entidades',
-    category: 'Link Analysis',
-    parameters: [
-      { name: 'entity_type', type: 'select', required: true, description: 'Tipo de entidad', options: ['domain', 'person', 'email', 'phone', 'company'] },
-      { name: 'entity_value', type: 'string', required: true, description: 'Valor de la entidad', placeholder: 'Valor de la entidad' },
-      { name: 'transform_set', type: 'select', required: false, description: 'Set de transforms', options: ['standard', 'social', 'infrastructure'] }
-    ]
-  },
-  {
-    id: 'nmap',
-    name: 'Nmap',
-    description: 'Escaneo de puertos y detección de servicios',
-    category: 'Network Intelligence',
-    parameters: [
-      { name: 'target', type: 'string', required: true, description: 'IP o rango de IPs', placeholder: '192.168.1.1 o 192.168.1.0/24' },
-      { name: 'ports', type: 'string', required: false, description: 'Puertos específicos', placeholder: '80,443,22 o 1-1000' },
-      { name: 'scan_type', type: 'select', required: false, description: 'Tipo de escaneo', options: ['TCP SYN (-sS)', 'TCP Connect (-sT)', 'UDP (-sU)', 'Stealth (-sN)'] },
-      { name: 'service_detection', type: 'boolean', required: false, description: 'Detección de servicios (-sV)' },
-      { name: 'os_detection', type: 'boolean', required: false, description: 'Detección de OS (-O)' },
-      { name: 'aggressive', type: 'boolean', required: false, description: 'Escaneo agresivo (-A)' },
-      { name: 'timing', type: 'select', required: false, description: 'Plantilla de timing', options: ['T0 (Paranoid)', 'T1 (Sneaky)', 'T2 (Polite)', 'T3 (Normal)', 'T4 (Aggressive)', 'T5 (Insane)'] }
-    ]
-  },
-  {
-    id: 'shodan',
-    name: 'Shodan',
-    description: 'Búsqueda de dispositivos conectados a internet',
-    category: 'Network Intelligence',
-    parameters: [
-      { name: 'query', type: 'string', required: true, description: 'Consulta de búsqueda', placeholder: 'apache, port:80, country:ES' },
-      { name: 'country', type: 'string', required: false, description: 'Código de país', placeholder: 'US, ES, FR' },
-      { name: 'city', type: 'string', required: false, description: 'Ciudad', placeholder: 'Madrid, Barcelona' },
-      { name: 'port', type: 'string', required: false, description: 'Puerto específico', placeholder: '80, 443, 22' },
-      { name: 'limit', type: 'number', required: false, description: 'Límite de resultados', placeholder: '100' },
-      { name: 'facets', type: 'multiselect', required: false, description: 'Facetas adicionales', options: ['country', 'city', 'port', 'org', 'domain', 'product'] }
-    ]
+const placeholderForInputType = (inputType: string): string => {
+  switch (inputType) {
+    case 'email': return 'ejemplo@dominio.com';
+    case 'ip': return '8.8.8.8';
+    case 'url': return 'https://ejemplo.com';
+    case 'domain': return 'ejemplo.com';
+    case 'phone': return '+34123456789';
+    default: return 'Objetivo';
   }
-];
-
-// Mock data para investigación actual
-const mockInvestigation: Investigation = {
-  id: '1',
-  title: 'Operación CryptoShadow - Fraude de Inversión Cripto',
-  description: 'Investigación de esquema Ponzi que utiliza criptomonedas para defraudar inversores. Pérdidas estimadas: $2.3M USD. Víctimas reportadas: 847 personas en 15 países.',
-  status: 'active',
-  priority: 'high',
-  createdAt: '2024-01-10T08:00:00Z',
-  updatedAt: '2024-01-15T16:45:00Z',
-  entities: [],
-  createdBy: 'admin'
 };
 
-// Mock data para métricas en tiempo real
-const mockMetrics = {
-  threatLevel: 8.5,
-  riskScore: 7.2,
-  aiConfidence: 94,
-  totalEntities: 47,
-  activeConnections: 23,
-  suspiciousActivities: 12,
-  geographicSpread: 15,
-  timelineEvents: 156,
-  dataPoints: 2847,
-  correlations: 34
+const inferParameterType = (value: any): string => {
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return 'number';
+  return 'string';
 };
 
-type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed';
+const mapTransformToTool = (t: any): OSINTTool => {
+  const inputType = typeof t?.input_type === 'string' ? t.input_type : 'any';
+  const defaultParameters: Record<string, any> =
+    t?.parameters && typeof t.parameters === 'object' && !Array.isArray(t.parameters)
+      ? t.parameters
+      : {};
+
+  const outputTypes: string[] = Array.isArray(t?.output_types) ? t.output_types.map((v: any) => String(v)) : [];
+  const optionalParameters: ToolParameter[] = Object.entries(defaultParameters)
+    .filter(([key]) => key !== 'target' && key !== 'input' && key !== 'entity_type')
+    .map(([key, value]) => ({
+      name: String(key),
+      type: inferParameterType(value),
+      required: false,
+      description: String(key),
+      placeholder: typeof value === 'number' || typeof value === 'string' ? String(value) : undefined,
+    }));
+
+  return {
+    id: String(t?.name ?? ''),
+    transformUuid: t?.id != null ? String(t.id) : undefined,
+    name: String(t?.display_name ?? t?.name ?? ''),
+    description: String(t?.description ?? ''),
+    category: String(t?.category ?? 'other'),
+    inputType,
+    outputTypes,
+    requiresApiKey: Boolean(t?.requires_api_key),
+    apiKeyName: typeof t?.api_key_name === 'string' && t.api_key_name ? t.api_key_name : undefined,
+    parameters: [
+      { name: 'target', type: 'string', required: true, description: `Objetivo (${inputType})`, placeholder: placeholderForInputType(inputType) },
+      ...optionalParameters,
+    ],
+    defaultParameters,
+  };
+};
+
+type ExecutionStatus = TransformExecutionStatus;
 
 interface ToolExecutionState {
   id: string;
@@ -289,71 +206,200 @@ const InvestigationWorkspace: React.FC = () => {
   const navigate = useNavigate();
   
   // Estados principales
-  const [investigation] = useState<Investigation>(mockInvestigation);
-  const [entities, setEntities] = useState<Entity[]>([
-    {
-      id: '1',
-      name: 'Marcus Blackwood Email',
-      type: 'email',
-      value: 'marcus.blackwood@cryptofinance.io',
-      description: 'CEO de CryptoFinance - Email principal identificado en investigación de fraude',
-      created_at: '2024-01-15T10:30:00Z',
-      properties: { 
-        verified: true, 
-        source: 'manual',
-        risk_level: 'high',
-        last_activity: '2024-01-14T18:45:00Z',
-        associated_platforms: ['LinkedIn', 'Twitter', 'Telegram']
-      }
-    },
-    {
-      id: '2',
-      name: 'CryptoFinance Domain',
-      type: 'domain',
-      value: 'cryptofinance.io',
-      description: 'Dominio principal - Registrado bajo identidad falsa',
-      created_at: '2024-01-15T10:35:00Z',
-      properties: { 
-        registrar: 'Namecheap',
-        creation_date: '2023-08-15',
-        expiry_date: '2025-08-15',
-        privacy_protection: true,
-        dns_servers: ['ns1.namecheap.com', 'ns2.namecheap.com'],
-        ssl_certificate: 'Let\'s Encrypt'
-      }
-    },
-    {
-      id: '3',
-      name: 'DigitalOcean Server',
-      type: 'ip',
-      value: '185.199.108.153',
-      description: 'Servidor de hosting - Ubicado en Países Bajos',
-      created_at: '2024-01-15T10:40:00Z',
-      properties: { 
-        country: 'NL',
-        city: 'Amsterdam',
-        organization: 'DigitalOcean LLC',
-        open_ports: [80, 443, 22, 3306],
-        services: ['nginx/1.18.0', 'MySQL 8.0', 'OpenSSH 8.2'],
-        threat_score: 7.2
-      }
-    }
-  ]);
+  const [investigation, setInvestigation] = useState<Investigation | null>(null);
+  const [entities, setEntities] = useState<Entity[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [isLoadingInvestigation, setIsLoadingInvestigation] = useState(false);
+  const [osintTools, setOsintTools] = useState<OSINTTool[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(false);
+  const [toolsError, setToolsError] = useState<string | null>(null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
   
   const [selectedTool, setSelectedTool] = useState<OSINTTool | null>(null);
   const [toolParameters, setToolParameters] = useState<Record<string, any>>({});
   const [executions, setExecutions] = useState<ToolExecutionState[]>([]);
-  const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   const [isExecuting, setIsExecuting] = useState(false);
   const [entityFilter, setEntityFilter] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [entityTypeFilter, setEntityTypeFilter] = useState('');
   const [entitySourceFilter, setEntitySourceFilter] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [showEntityForm, setShowEntityForm] = useState(false);
+  const [showExecutionDetails, setShowExecutionDetails] = useState<string | null>(null);
+  const [executionDetailsLoading, setExecutionDetailsLoading] = useState(false);
+  const [executionDetailsError, setExecutionDetailsError] = useState<string | null>(null);
+  const [executionDetails, setExecutionDetails] = useState<any | null>(null);
   const [activePanel, setActivePanel] = useState<'overview' | 'analysis' | 'timeline' | 'geography' | 'network'>('overview');
   const [showOSINTPanel, setShowOSINTPanel] = useState(false);
+  const [investigationStats, setInvestigationStats] = useState<any | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [executionActionLoading, setExecutionActionLoading] = useState<Record<string, boolean>>({});
+  const [autoReconLoading, setAutoReconLoading] = useState(false);
+  const [showAutoReconModal, setShowAutoReconModal] = useState(false);
+  const [autoReconTarget, setAutoReconTarget] = useState('');
+  const [autoReconResult, setAutoReconResult] = useState<any | null>(null);
+  const [autoReconError, setAutoReconError] = useState<string | null>(null);
+  const [autoReconExpanded, setAutoReconExpanded] = useState<Record<string, boolean>>({});
+  const [showDockerCatalogModal, setShowDockerCatalogModal] = useState(false);
+  const [dockerTarget, setDockerTarget] = useState('');
+  const [dockerCatalog, setDockerCatalog] = useState<any | null>(null);
+  const [dockerCatalogLoading, setDockerCatalogLoading] = useState(false);
+  const [dockerCatalogError, setDockerCatalogError] = useState<string | null>(null);
+  const [selectedDorks, setSelectedDorks] = useState<string[]>([]);
+  const [executingDorks, setExecutingDorks] = useState(false);
+
+  const loadInvestigation = useCallback(async (isAutoRefresh = false) => {
+    if (!id) return;
+    if (!isAutoRefresh) setIsLoadingInvestigation(true);
+    setPageError(null);
+    try {
+      const invRes = await apiService.getInvestigation(id);
+      if (!invRes.success || !invRes.data) {
+        if (!isAutoRefresh) {
+          setInvestigation(null);
+          setEntities([]);
+          setPageError(invRes.message || 'No se pudo cargar la investigación');
+        }
+        return;
+      }
+
+      setInvestigation(invRes.data);
+      setEntities(Array.isArray(invRes.data.entities) ? invRes.data.entities : []);
+      const metadataAutoRecon = invRes.data.metadata?.auto_recon ?? null;
+      if (metadataAutoRecon) {
+        setAutoReconResult(metadataAutoRecon);
+      }
+    } finally {
+      if (!isAutoRefresh) setIsLoadingInvestigation(false);
+    }
+  }, [id]);
+
+  const resolveDefaultTarget = () => {
+    let target = investigation?.target || investigation?.metadata?.target || '';
+    if (!target) {
+      const targetEntity = entities.find(e => e.type === 'domain' || e.type === 'url' || e.type === 'ip');
+      if (targetEntity) {
+        target = targetEntity.value || '';
+      }
+    }
+    return target;
+  };
+
+  const handleFullAutoRecon = () => {
+    const target = resolveDefaultTarget();
+    setAutoReconTarget(target);
+    setShowAutoReconModal(true);
+  };
+
+  const loadDockerCatalog = async (target?: string) => {
+    setDockerCatalogLoading(true);
+    setDockerCatalogError(null);
+    try {
+      const res = await apiService.getOsintCatalog(target);
+      if (!res.success) {
+        setDockerCatalogError(res.message || 'No se pudo cargar el catálogo.');
+        setDockerCatalog(null);
+        return;
+      }
+      setDockerCatalog(res.data);
+    } finally {
+      setDockerCatalogLoading(false);
+    }
+  };
+
+  const handleExecuteDorks = async () => {
+    if (!id || selectedDorks.length === 0) return;
+    setExecutingDorks(true);
+    try {
+      const res = await apiService.executeDorks(id, selectedDorks, dockerTarget);
+      if (res.success) {
+        Swal.fire({
+          title: 'Búsquedas Iniciadas',
+          text: `Se han encolado ${res.data?.execution_ids?.length || 0} búsquedas.`,
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+        setShowDockerCatalogModal(false);
+        setSelectedDorks([]);
+        void refreshAll();
+      } else {
+        Swal.fire('Error', res.message || 'Error al ejecutar dorks', 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      Swal.fire('Error', 'Error de conexión', 'error');
+    } finally {
+      setExecutingDorks(false);
+    }
+  };
+
+  const toggleDork = (query: string) => {
+    setSelectedDorks(prev => 
+      prev.includes(query) ? prev.filter(q => q !== query) : [...prev, query]
+    );
+  };
+
+  const handleOpenDockerTools = () => {
+    const target = resolveDefaultTarget();
+    setDockerTarget(target);
+    setShowDockerCatalogModal(true);
+    void loadDockerCatalog(target);
+  };
+
+  const executeAutoRecon = async () => {
+    if (!autoReconTarget) {
+      Swal.fire({
+        title: 'Atención',
+        text: 'Por favor ingrese un objetivo.',
+        icon: 'warning',
+        confirmButtonText: 'Entendido'
+      });
+      return;
+    }
+
+    setShowAutoReconModal(false);
+    setAutoReconLoading(true);
+    setAutoReconError(null);
+    try {
+      const res = await apiService.autoRecon(autoReconTarget, id);
+      if (!res.success) {
+        setAutoReconResult(null);
+        setAutoReconError(res.message || 'Ocurrió un error al ejecutar el escaneo automático.');
+        Swal.fire({
+          title: 'Error',
+          text: res.message || 'Ocurrió un error al ejecutar el escaneo automático.',
+          icon: 'error',
+          confirmButtonText: 'Cerrar'
+        });
+      } else {
+        setAutoReconResult(res.data ?? null);
+        Swal.fire({
+          title: '¡Escaneo completado!',
+          text: 'Los resultados se han registrado con éxito.',
+          icon: 'success',
+          confirmButtonText: 'Genial'
+        });
+        // Refresh investigation data
+        void refreshAll();
+      }
+    } catch (e) {
+      console.error(e);
+      setAutoReconResult(null);
+      setAutoReconError('Ocurrió un error al ejecutar el escaneo automático.');
+      Swal.fire({
+        title: 'Error Crítico',
+        text: 'Ocurrió un error al ejecutar el escaneo automático.',
+        icon: 'error',
+        confirmButtonText: 'Cerrar'
+      });
+    } finally {
+      setAutoReconLoading(false);
+    }
+  };
 
   // Verificar redirección automática
   useEffect(() => {
@@ -362,6 +408,163 @@ const InvestigationWorkspace: React.FC = () => {
       return;
     }
   }, [id, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const stored = apiService.getStoredUser();
+    if (stored && !cancelled) setCurrentUser(stored);
+
+    const load = async () => {
+      const res = await apiService.getCurrentUser();
+      if (!cancelled && res.success && res.data) {
+        setCurrentUser(res.data);
+        localStorage.setItem('user', JSON.stringify(res.data));
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    void loadInvestigation();
+  }, [loadInvestigation]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadTools = async () => {
+      setToolsLoading(true);
+      setToolsError(null);
+      try {
+        const res = await apiService.listTransforms({ enabled: true, page_size: 200 });
+        if (!res.success || !res.data) {
+          if (!cancelled) setToolsError(res.message || 'No se pudieron cargar las herramientas');
+          return;
+        }
+        const tools = res.data
+          .filter((t: any) => t && typeof t === 'object' && typeof t.name === 'string' && t.name)
+          .map(mapTransformToTool);
+        if (!cancelled) setOsintTools(tools);
+      } finally {
+        if (!cancelled) setToolsLoading(false);
+      }
+    };
+    void loadTools();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const mapBackendExecutionToState = useCallback((execution: TransformExecution): ToolExecutionState => {
+    const isDone = execution.status === 'completed' || execution.status === 'failed' || execution.status === 'cancelled';
+    const progress =
+      execution.status === 'running' ? 50 : isDone ? 100 : 0;
+
+    const toolId = execution.transform_name;
+    const entitiesCreated = typeof execution.results?.entities_created === 'number' ? execution.results.entities_created : undefined;
+
+    return {
+      id: execution.id,
+      toolId,
+      status: execution.status,
+      progress,
+      startTime: execution.started_at ? new Date(execution.started_at) : undefined,
+      endTime: execution.completed_at ? new Date(execution.completed_at) : undefined,
+      results: execution.results
+        ? [
+            { type: 'data', count: entitiesCreated ?? 0 },
+            { type: 'raw', data: execution.results },
+          ]
+        : undefined,
+      error: execution.error_message ?? undefined,
+    };
+  }, []);
+
+  const refreshExecutions = useCallback(async () => {
+    if (!id) return;
+    const response = await apiService.listTransformExecutions(id);
+    if (response.success && response.data) {
+      setExecutions(response.data.map(mapBackendExecutionToState));
+    }
+  }, [id, mapBackendExecutionToState]);
+
+  const refreshEntities = useCallback(async () => {
+    if (!id) return;
+    const entRes = await apiService.getEntities(undefined, id);
+    if (entRes.success && entRes.data) {
+      setEntities(entRes.data);
+    }
+  }, [id]);
+
+  const refreshStats = useCallback(
+    async (showLoading = false) => {
+      if (!id) return;
+      if (showLoading) setStatsLoading(true);
+      setStatsError(null);
+      try {
+        const res = await apiService.getInvestigationStats(id);
+        if (!res.success || !res.data) {
+          setInvestigationStats(null);
+          setStatsError(res.message || 'No se pudieron cargar las estadísticas');
+          return;
+        }
+        setInvestigationStats(res.data);
+      } finally {
+        if (showLoading) setStatsLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const refreshAll = useCallback(async () => {
+    if (!id) return;
+    await Promise.all([refreshExecutions(), refreshEntities(), refreshStats(false)]);
+    setLastRefreshAt(new Date());
+  }, [id, refreshExecutions, refreshEntities, refreshStats]);
+
+  useEffect(() => {
+    if (!id) return;
+    void refreshAll();
+    if (!autoRefreshEnabled) return;
+    const interval = window.setInterval(() => {
+      void refreshAll();
+    }, 4000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [id, refreshAll, autoRefreshEnabled]);
+
+  useEffect(() => {
+    if (!id) return;
+    void refreshStats(true);
+  }, [id, refreshStats]);
+
+  useEffect(() => {
+    if (!showExecutionDetails || !id) return;
+    let cancelled = false;
+    const load = async () => {
+      setExecutionDetailsLoading(true);
+      setExecutionDetailsError(null);
+      setExecutionDetails(null);
+      try {
+        const res = await apiService.getExecutionLogs(id, showExecutionDetails);
+        if (!res.success) {
+          if (!cancelled) setExecutionDetailsError(res.message || 'No se pudieron cargar los detalles');
+          return;
+        }
+        if (!cancelled) setExecutionDetails(res.data ?? null);
+      } finally {
+        if (!cancelled) setExecutionDetailsLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [showExecutionDetails, id]);
 
   // Función para validar formulario
   const isFormValid = () => {
@@ -374,106 +577,182 @@ const InvestigationWorkspace: React.FC = () => {
     });
   };
 
-  // Simular ejecución de herramienta
   const executeOSINTTool = async (tool?: OSINTTool) => {
     const targetTool = tool || selectedTool;
     
     if (!targetTool) {
-      alert('Por favor selecciona una herramienta OSINT');
+      Swal.fire({
+        title: 'Herramienta no seleccionada',
+        text: 'Por favor selecciona una herramienta OSINT para continuar.',
+        icon: 'warning',
+        confirmButtonText: 'Entendido'
+      });
       return;
     }
 
     if (!isFormValid()) {
-      alert('Por favor completa todos los campos requeridos correctamente');
+      Swal.fire({
+        title: 'Formulario incompleto',
+        text: 'Por favor completa todos los campos requeridos correctamente.',
+        icon: 'warning',
+        confirmButtonText: 'Entendido'
+      });
       return;
     }
 
-    const executionId = Date.now().toString();
-    
-    setExecutionQueue(prev => [...prev, executionId]);
-    
-    const execution: ToolExecutionState = {
-      id: executionId,
-      toolId: targetTool.id,
-      status: 'pending',
-      progress: 0,
-      startTime: new Date()
-    };
-
-    setExecutions(prev => [...prev, execution]);
-    setToolParameters({});
-    setSelectedTool(null);
-
-    if (!isExecuting) {
-      processExecutionQueue();
+    if (!id) {
+      Swal.fire('Error', 'Investigación inválida', 'error');
+      return;
     }
-  };
 
-  const processExecutionQueue = async () => {
-    if (isExecuting || executionQueue.length === 0) return;
-    
+    const transformName = targetTool.id;
+    if (!transformName) {
+      Swal.fire('Error', 'Herramienta inválida', 'error');
+      return;
+    }
+
+    const requiredParams = targetTool.parameters.filter((p: any) => p.required);
+    const primaryParamName = requiredParams[0]?.name;
+    const primaryValue = primaryParamName ? toolParameters[primaryParamName] : undefined;
+
+    const rawValue =
+      toolParameters.email ??
+      toolParameters.domain ??
+      toolParameters.username ??
+      toolParameters.target ??
+      toolParameters.entity_value ??
+      primaryValue;
+
+    if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') {
+      Swal.fire({
+        title: 'Input no válido',
+        text: 'No se pudo determinar el input para la ejecución.',
+        icon: 'error',
+        confirmButtonText: 'Revisar'
+      });
+      return;
+    }
+
+    const value = String(rawValue).trim();
+    const looksLikeIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
+    const looksLikeUrl = /^https?:\/\//.test(value);
+    const entityType =
+      toolParameters.entity_type ? String(toolParameters.entity_type) :
+      targetTool.inputType && targetTool.inputType !== 'any' ? targetTool.inputType :
+      looksLikeUrl ? 'url' :
+      looksLikeIp ? 'ip' :
+      'domain';
+
     setIsExecuting(true);
-    
-    while (executionQueue.length > 0) {
-      const currentId = executionQueue[0];
-      setExecutionQueue(prev => prev.slice(1));
+    try {
+      const parameters: Record<string, any> = { ...toolParameters };
+      delete parameters.target;
+      delete parameters.entity_type;
+      delete parameters.email;
+      delete parameters.domain;
+      delete parameters.username;
+      delete parameters.entity_value;
+
+      const response = await apiService.createTransformExecution(id, {
+        transform_name: transformName,
+        input: { entity_type: entityType, value },
+        parameters,
+      });
+
+      if (!response.success || !response.data) {
+        Swal.fire({
+          title: 'Error de Ejecución',
+          text: response.message || 'Error al ejecutar transform',
+          icon: 'error',
+          confirmButtonText: 'Cerrar'
+        });
+        return;
+      }
+
+      setToolParameters({});
+      setSelectedTool(null);
       
-      setExecutions(prev => prev.map(exec => 
-        exec.id === currentId ? { ...exec, status: 'running' } : exec
-      ));
+      Swal.fire({
+        title: 'Ejecución Iniciada',
+        text: 'La herramienta se está ejecutando en segundo plano.',
+        icon: 'success',
+        timer: 2000,
+        showConfirmButton: false
+      });
       
-      await simulateToolExecution(currentId);
+      setExecutions(prev => [mapBackendExecutionToState(response.data as TransformExecution), ...prev]);
+      void refreshAll();
+    } finally {
+      setIsExecuting(false);
     }
-    
-    setIsExecuting(false);
   };
 
-  const simulateToolExecution = (executionId: string): Promise<void> => {
-    return new Promise((resolve) => {
-      const execution = executions.find(e => e.id === executionId);
-      if (!execution) {
-        resolve();
+  const handleExecutionAction = async (executionId: string, action: 'cancel' | 'retry') => {
+    if (!id) return;
+    const key = `${executionId}_${action}`;
+    setExecutionActionLoading((prev) => ({ ...prev, [key]: true }));
+    try {
+      const res = await apiService.controlTransformExecution(id, executionId, action);
+      if (!res.success) {
+        Swal.fire('Error', res.message || 'No se pudo actualizar la ejecución', 'error');
         return;
       }
       
-      const duration = Math.random() * 8000 + 2000;
-      const steps = 20;
-      const stepDuration = duration / steps;
-      
-      let currentStep = 0;
-      
-      const interval = setInterval(() => {
-        currentStep++;
-        const progress = Math.min((currentStep / steps) * 100, 100);
-        
-        setExecutions(prev => prev.map(exec => {
-          if (exec.id === executionId) {
-            if (progress >= 100) {
-              clearInterval(interval);
-              resolve();
-              return {
-                ...exec,
-                status: Math.random() > 0.1 ? 'completed' : 'failed',
-                progress: 100,
-                endTime: new Date(),
-                results: Math.random() > 0.1 ? [
-                  { type: 'info', message: 'Ejecución completada exitosamente' },
-                  { type: 'data', count: Math.floor(Math.random() * 20) + 1 }
-                ] : undefined,
-                error: Math.random() > 0.1 ? undefined : 'Error simulado en la ejecución'
-              };
-            }
-            return { ...exec, progress };
-          }
-          return exec;
-        }));
-      }, stepDuration);
-    });
+      Swal.fire({
+        title: action === 'retry' ? 'Reintentando...' : 'Cancelado',
+        text: `La ejecución ha sido ${action === 'retry' ? 'reiniciada' : 'cancelada'}.`,
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      });
+
+      if (showExecutionDetails === executionId) {
+        const details = await apiService.getExecutionLogs(id, executionId);
+        if (details.success) setExecutionDetails(details.data ?? null);
+      }
+      await refreshAll();
+    } finally {
+      setExecutionActionLoading((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
   };
 
-  const handleDeleteEntity = (entityId: string) => {
-    setEntities(prev => prev.filter(e => e.id !== entityId));
-    setShowDeleteConfirm(null);
+  const handleDeleteEntity = async (entityId: string) => {
+    const result = await Swal.fire({
+      title: '¿Estás seguro?',
+      text: "Esta acción no se puede deshacer.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      if (!id) {
+        Swal.fire('Error', 'Investigación inválida', 'error');
+        return;
+      }
+      const res = await apiService.deleteEntity(entityId, id);
+      if (!res.success) {
+        Swal.fire('Error', res.message || 'Error al eliminar la entidad', 'error');
+        return;
+      }
+      setEntities(prev => prev.filter(e => e.id !== entityId));
+      Swal.fire(
+        '¡Eliminado!',
+        'La entidad ha sido eliminada.',
+        'success'
+      );
+    } catch {
+      Swal.fire('Error', 'Error al eliminar la entidad', 'error');
+    }
   };
 
   const handleEditEntity = (entity: Entity) => {
@@ -487,19 +766,249 @@ const InvestigationWorkspace: React.FC = () => {
   };
 
   const filteredEntities = entities.filter(entity => {
-    const matchesSearch = (entity.value && entity.value.toLowerCase().includes(entityFilter.toLowerCase())) ||
-                         (entity.description && entity.description.toLowerCase().includes(entityFilter.toLowerCase()));
+    const q = entityFilter.toLowerCase();
+    const matchesSearch =
+      (entity.value && entity.value.toLowerCase().includes(q)) ||
+      (entity.name && entity.name.toLowerCase().includes(q)) ||
+      (entity.description && entity.description.toLowerCase().includes(q));
     const matchesType = !entityTypeFilter || entity.type === entityTypeFilter;
     const matchesSource = !entitySourceFilter || entity.properties?.source === entitySourceFilter;
     
     return matchesSearch && matchesType && matchesSource;
   });
 
+  const metrics = useMemo(() => {
+    const failed = executions.filter((e) => e.status === 'failed').length;
+    const threatLevel = Math.min(10, Math.max(0, 2 + failed * 1.5 + Math.log1p(entities.length) / 2));
+    const riskScore = Math.round(Math.min(100, threatLevel * 10));
+    const suspiciousActivities = failed;
+    const severityLabel = threatLevel >= 8 ? 'CRÍTICO' : threatLevel >= 5 ? 'ALTO' : threatLevel >= 3 ? 'MEDIO' : 'BAJO';
+    return {
+      threatLevel: Number(threatLevel.toFixed(1)),
+      riskScore,
+      suspiciousActivities,
+      severityLabel,
+    };
+  }, [entities.length, executions]);
+
+  const formatEntityType = (type: string) => {
+    const map: Record<string, string> = {
+      ip: 'IPs',
+      domain: 'Dominios',
+      email: 'Emails',
+      url: 'URLs',
+      port: 'Puertos',
+      service: 'Servicios',
+      hash: 'Hashes',
+      person: 'Personas',
+      organization: 'Organizaciones',
+      phone: 'Teléfonos',
+      geolocation: 'Geolocalizaciones',
+      social_media: 'Redes Sociales',
+      cryptocurrency: 'Cripto',
+      file: 'Archivos',
+      other: 'Otros',
+    };
+    return map[type] || type;
+  };
+
+  const formatRelationshipType = (type: string) => {
+    const map: Record<string, string> = {
+      owns: 'Propiedad',
+      related_to: 'Relacionado',
+      resolves_to: 'Resuelve a',
+      communicates_with: 'Comunica con',
+      linked_to: 'Vinculado a',
+    };
+    return map[type] || type.replace(/_/g, ' ');
+  };
+
+  const normalizeText = (value: any) => String(value ?? '').replace(/\s+/g, ' ').trim();
+
+  const summarizeWhois = (raw: string): string[] => {
+    if (!raw) return [];
+    const fields = ['inetnum', 'netname', 'country', 'org-name', 'abuse-mailbox', 'origin', 'route'];
+    const lines = raw.split('\n');
+    const matches: string[] = [];
+    for (const line of lines) {
+      const clean = line.trim();
+      const match = clean.match(/^([a-z-]+):\s*(.+)$/i);
+      if (match && fields.includes(match[1])) {
+        matches.push(`${match[1]}: ${match[2]}`);
+      }
+      if (matches.length >= 6) break;
+    }
+    return matches;
+  };
+
+  const summarizeNmap = (results: any[]): string[] => {
+    const services = results
+      .filter((item) => item?.type === 'service')
+      .map((item) => {
+        const props = item?.properties || {};
+        const name = normalizeText(props.service_name || item?.value || 'service');
+        const port = normalizeText(props.port);
+        const product = normalizeText(props.product);
+        const version = normalizeText(props.version);
+        const parts = [name, port && `:${port}`, product, version].filter(Boolean);
+        return parts.join(' ');
+      });
+    const ports = results
+      .filter((item) => item?.type === 'port')
+      .map((item) => {
+        const props = item?.properties || {};
+        const port = normalizeText(props.port || item?.value);
+        const state = normalizeText(props.state);
+        const product = normalizeText(props.service_product || props.product);
+        const version = normalizeText(props.service_version || props.version);
+        const parts = [port && `port ${port}`, state && `(${state})`, product, version].filter(Boolean);
+        return parts.join(' ');
+      });
+    return [...services, ...ports].filter(Boolean).slice(0, 6);
+  };
+
+  const summarizeGenericResults = (results: any[]): string[] => {
+    return results
+      .map((item) => {
+        const type = normalizeText(item?.type);
+        const value = normalizeText(item?.value);
+        const props = item?.properties || {};
+        const extra = normalizeText(props?.service_name || props?.product || props?.version);
+        const label = [type, value].filter(Boolean).join(': ');
+        const full = [label, extra].filter(Boolean).join(' ');
+        return full || value || type;
+      })
+      .filter(Boolean)
+      .slice(0, 6);
+  };
+
+  const buildAutoReconSummary = (toolName: string, toolData: any): string[] => {
+    const results = Array.isArray(toolData?.results) ? toolData.results : [];
+    if (toolName === 'whois') {
+      const raw = normalizeText(toolData?.results?.[0]?.properties?.raw || '');
+      return summarizeWhois(raw);
+    }
+    if (toolName === 'nmap') {
+      return summarizeNmap(results);
+    }
+    if (toolName === 'ping') {
+      return results.map((item: any) => normalizeText(item?.value)).filter(Boolean).slice(0, 3);
+    }
+    return summarizeGenericResults(results);
+  };
+
+  const entityTypeStats = useMemo(() => {
+    const byType = investigationStats?.entities?.by_type ?? {};
+    const total = typeof investigationStats?.entities?.total === 'number' ? investigationStats.entities.total : 0;
+    return Object.entries(byType)
+      .map(([type, count]) => ({
+        type,
+        count: Number(count),
+        percent: total > 0 ? Math.round((Number(count) / total) * 100) : 0,
+      }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [investigationStats]);
+
+  const iocStats = useMemo(() => {
+    const byType = investigationStats?.entities?.by_type ?? {};
+    const types = ['ip', 'domain', 'url', 'hash', 'email'];
+    return types
+      .map((type) => ({ type, count: Number(byType[type] ?? 0) }))
+      .filter((item) => item.count > 0);
+  }, [investigationStats]);
+
+  const relationshipTypeStats = useMemo(() => {
+    const byType = investigationStats?.relationships?.by_type ?? {};
+    return Object.entries(byType)
+      .map(([type, count]) => ({ type, count: Number(count) }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [investigationStats]);
+
+  const executionStatusStats = useMemo(() => {
+    const byStatus = investigationStats?.executions?.by_status ?? {};
+    return Object.entries(byStatus)
+      .map(([status, count]) => ({ status, count: Number(count) }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [investigationStats]);
+
+  const networkSummary = useMemo(() => {
+    const totalNodes = typeof investigationStats?.entities?.total === 'number' ? investigationStats.entities.total : entities.length;
+    const totalEdges = typeof investigationStats?.relationships?.total === 'number' ? investigationStats.relationships.total : 0;
+    const density =
+      totalNodes > 1 ? Math.round((2 * totalEdges * 100) / (totalNodes * (totalNodes - 1))) / 100 : 0;
+    return {
+      totalNodes,
+      totalEdges,
+      density,
+    };
+  }, [investigationStats, entities.length]);
+
+  const geographySummary = useMemo(() => {
+    const byType = investigationStats?.entities?.by_type ?? {};
+    return {
+      geolocations: Number(byType.geolocation ?? 0),
+      ips: Number(byType.ip ?? 0),
+      domains: Number(byType.domain ?? 0),
+    };
+  }, [investigationStats]);
+
+  type TimelineItem = {
+    title: string;
+    description: string;
+    badge: string;
+    color: 'success' | 'primary' | 'warning' | 'danger' | 'secondary';
+    timestamp: Date;
+  };
+
+  const timelineItems = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [];
+    if (investigation?.createdAt) {
+      items.push({
+        title: 'Investigación Iniciada',
+        description: investigation.description || 'Investigación creada',
+        badge: 'Sistema',
+        color: 'success',
+        timestamp: new Date(investigation.createdAt),
+      });
+    }
+    for (const e of executions) {
+      const status = e.status;
+      const completed = e.endTime || undefined;
+      const started = e.startTime || undefined;
+      const when = completed ? completed : started ? started : new Date();
+      const color = status === 'completed' ? 'primary' : status === 'failed' ? 'danger' : status === 'running' ? 'warning' : 'secondary';
+      items.push({
+        title: status === 'completed' ? `Transform ${e.toolId || e.id} completado` : status === 'failed' ? `Transform ${e.toolId || e.id} falló` : `Transform ${e.toolId || e.id} ${status}`,
+        description: e.error ? e.error : `Ejecución ${status}`,
+        badge: 'OSINT',
+        color,
+        timestamp: when,
+      });
+    }
+    for (const ent of entities) {
+      const when = ent.created_at ? new Date(ent.created_at) : ent.createdAt ? new Date(ent.createdAt) : undefined;
+      if (!when) continue;
+      items.push({
+        title: 'Entidad Agregada',
+        description: `${ent.type.toUpperCase()}: ${ent.value}`,
+        badge: 'Sistema',
+        color: 'secondary',
+        timestamp: when,
+      });
+    }
+    items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    return items.slice(0, 25);
+  }, [investigation, executions, entities]);
+
   const getStatusVariant = (status: ExecutionStatus) => {
     switch (status) {
       case 'completed': return 'success';
       case 'running': return 'primary';
       case 'failed': return 'danger';
+      case 'cancelled': return 'warning';
       default: return 'secondary';
     }
   };
@@ -509,31 +1018,31 @@ const InvestigationWorkspace: React.FC = () => {
       case 'completed': return <CheckCircle size={16} />;
       case 'running': return <Spinner animation="border" size="sm" />;
       case 'failed': return <AlertCircle size={16} />;
+      case 'cancelled': return <X size={16} />;
       default: return <Clock size={16} />;
     }
   };
 
-  // Mock user data for Header component
-  const mockUser = {
-    id: '1',
-    username: 'admin',
-    email: 'admin@osint.local',
-    role: 'admin' as const,
-    isActive: true,
-    createdAt: new Date().toISOString()
-  };
-
   const handleLogout = () => {
-    // Handle logout logic here
+    void apiService.logout();
     navigate('/login');
   };
 
   return (
-    <div className="bg-dark text-light min-vh-100">
-      <Header user={mockUser} onLogout={handleLogout} />
+    <div className="app-shell">
+      {currentUser && <Header user={currentUser} onLogout={handleLogout} />}
+
+      <div className="app-page">
+        {pageError && (
+          <Container fluid className="py-2">
+            <Alert variant="danger" className="mb-0">
+              {pageError}
+            </Alert>
+          </Container>
+        )}
       
       {/* Header de la investigación */}
-      <Container fluid className="py-3 border-bottom border-secondary">
+      <Container fluid className="py-3 border-bottom">
         <Row className="align-items-center">
           <Col>
             <div className="d-flex align-items-center gap-3">
@@ -548,13 +1057,26 @@ const InvestigationWorkspace: React.FC = () => {
               </Button>
               
               <div>
-                <h2 className="h4 mb-1 text-light">{investigation.title}</h2>
+                <h2 className="h4 mb-1">
+                  {investigation?.title ?? 'Investigación'}
+                  {isLoadingInvestigation && <Spinner animation="border" size="sm" className="ms-2" />}
+                </h2>
                 <div className="d-flex align-items-center gap-3 text-muted small">
-                  <span>{investigation.case_number} • {investigation.jurisdiction}</span>
-                  <Badge bg={investigation.priority === 'high' ? 'danger' : investigation.priority === 'medium' ? 'warning' : 'success'}>
-                    {investigation.priority === 'high' ? 'CRÍTICA' : investigation.priority === 'medium' ? 'ACTIVA' : 'BAJA'}
+                  <span>
+                    {(investigation?.case_number || investigation?.jurisdiction)
+                      ? `${investigation?.case_number ?? ''}${investigation?.case_number && investigation?.jurisdiction ? ' • ' : ''}${investigation?.jurisdiction ?? ''}`
+                      : (investigation?.createdBy ? `Creada por ${investigation.createdBy}` : '')}
+                  </span>
+                  <Badge bg={['high', 'critical'].includes(investigation?.priority ?? 'medium') ? 'danger' : (investigation?.priority ?? 'medium') === 'medium' ? 'warning' : 'success'}>
+                    {['high', 'critical'].includes(investigation?.priority ?? 'medium') ? 'CRÍTICA' : (investigation?.priority ?? 'medium') === 'medium' ? 'ACTIVA' : 'BAJA'}
                   </Badge>
-                  <Button variant="outline-primary" size="sm" className="d-flex align-items-center gap-1">
+                  <Button
+                    variant="outline-primary"
+                    size="sm"
+                    className="d-flex align-items-center gap-1"
+                    onClick={() => id && navigate(`/graphs?investigationId=${encodeURIComponent(id)}`)}
+                    disabled={!id}
+                  >
                     <Eye size={14} />
                     Ver en Grafo
                   </Button>
@@ -565,48 +1087,48 @@ const InvestigationWorkspace: React.FC = () => {
           
           <Col xs="auto">
             <div className="text-end">
-              <div className="h5 mb-0 text-danger">{investigation.estimated_loss}</div>
-              <div className="small text-muted">{investigation.victim_count} víctimas</div>
+              <div className="h5 mb-0 text-danger">{investigation?.estimated_loss ?? '-'}</div>
+              <div className="small text-muted">{investigation?.victim_count ?? 0} víctimas</div>
             </div>
           </Col>
         </Row>
       </Container>
 
       {/* Panel de métricas en tiempo real */}
-      <Container fluid className="py-3 bg-dark">
+      <Container fluid className="py-3">
           <Row className="g-4 justify-content-center">
             <Col md={3}>
-              <Card className="bg-dark border-secondary h-100">
+              <Card className="h-100">
                 <Card.Body className="text-center py-4">
                   <div className="d-flex align-items-center justify-content-center mb-3">
                     <Shield className="me-2" size={24} style={{color: '#dc3545'}} />
-                    <span className="small" style={{color: '#6c757d'}}>CRÍTICO</span>
+                    <span className="small" style={{color: '#6c757d'}}>{metrics.severityLabel}</span>
                   </div>
-                  <div className="h3 mb-1" style={{color: '#dc3545'}}>{mockMetrics.threatLevel}/10</div>
+                  <div className="h3 mb-1" style={{color: '#dc3545'}}>{metrics.threatLevel}/10</div>
                   <div className="small text-muted">Nivel de Amenaza</div>
                 </Card.Body>
               </Card>
             </Col>
             
             <Col md={3}>
-              <Card className="bg-dark border-secondary h-100">
+              <Card className="h-100">
                 <Card.Body className="text-center py-4">
                   <div className="d-flex align-items-center justify-content-center mb-3">
                     <Target className="me-2" size={24} style={{color: '#fd7e14'}} />
                     <span className="small" style={{color: '#6c757d'}}>ALTO</span>
                   </div>
-                  <div className="h3 mb-1" style={{color: '#fd7e14'}}>{mockMetrics.riskScore}%</div>
+                  <div className="h3 mb-1" style={{color: '#fd7e14'}}>{metrics.riskScore}%</div>
                   <div className="small text-muted">Puntuación de Riesgo</div>
                 </Card.Body>
               </Card>
             </Col>
             
             <Col md={3}>
-              <Card className="bg-dark border-secondary h-100">
+              <Card className="h-100">
                 <Card.Body className="text-center py-4">
                   <div className="d-flex align-items-center justify-content-center mb-3">
                     <Database className="me-2" size={24} style={{color: '#0dcaf0'}} />
-                    <span className="small" style={{color: '#6c757d'}}>+{entities.length - 10}</span>
+                    <span className="small" style={{color: '#6c757d'}}>+{Math.max(0, entities.length - 10)}</span>
                   </div>
                   <div className="h3 mb-1" style={{color: '#0dcaf0'}}>{entities.length}</div>
                   <div className="small text-muted">Entidades Totales</div>
@@ -615,13 +1137,13 @@ const InvestigationWorkspace: React.FC = () => {
             </Col>
             
             <Col md={3}>
-              <Card className="bg-dark border-secondary h-100">
+              <Card className="h-100">
                 <Card.Body className="text-center py-4">
                   <div className="d-flex align-items-center justify-content-center mb-3">
                     <Activity className="me-2" size={24} style={{color: '#ffc107'}} />
                     <span className="small" style={{color: '#6c757d'}}>ACTIVO</span>
                   </div>
-                  <div className="h3 mb-1" style={{color: '#ffc107'}}>{mockMetrics.suspiciousActivities}</div>
+                  <div className="h3 mb-1" style={{color: '#ffc107'}}>{metrics.suspiciousActivities}</div>
                   <div className="small text-muted">Actividades Sospechosas</div>
                 </Card.Body>
               </Card>
@@ -633,14 +1155,21 @@ const InvestigationWorkspace: React.FC = () => {
               <div className="d-flex align-items-center justify-content-between">
                 <div className="d-flex align-items-center gap-3">
                   <Button 
-                    variant="outline-success" 
+                    variant={autoRefreshEnabled ? 'outline-success' : 'outline-secondary'} 
                     size="sm" 
                     className="d-flex align-items-center gap-1"
+                    onClick={() => {
+                      const next = !autoRefreshEnabled;
+                      setAutoRefreshEnabled(next);
+                      if (next) void refreshAll();
+                    }}
                   >
                     <RefreshCw size={14} />
-                    Auto-refresh
+                    Auto-refresh {autoRefreshEnabled ? 'ON' : 'OFF'}
                   </Button>
-                  <span className="small text-muted">Últimas actualizaciones</span>
+                  <span className="small text-muted">
+                    Última actualización: {lastRefreshAt ? lastRefreshAt.toLocaleTimeString() : '-'}
+                  </span>
                 </div>
                 <span className="small text-muted">En vivo</span>
               </div>
@@ -654,33 +1183,33 @@ const InvestigationWorkspace: React.FC = () => {
           {/* Panel principal */}
           <Col lg={9} className="p-3">
             <Tab.Container activeKey={activePanel} onSelect={(k) => setActivePanel(k as any)}>
-              <Nav variant="tabs" className="mb-3 border-bottom border-secondary">
+              <Nav variant="tabs" className="mb-3 border-bottom">
                 <Nav.Item>
-                  <Nav.Link eventKey="overview" className="text-light">
+                  <Nav.Link eventKey="overview">
                     <Home size={16} className="me-2" />
                     Vista General
                   </Nav.Link>
                 </Nav.Item>
                 <Nav.Item>
-                  <Nav.Link eventKey="analysis" className="text-light">
+                  <Nav.Link eventKey="analysis">
                     <BarChart3 size={16} className="me-2" />
                     Análisis de Amenazas
                   </Nav.Link>
                 </Nav.Item>
                 <Nav.Item>
-                  <Nav.Link eventKey="timeline" className="text-light">
+                  <Nav.Link eventKey="timeline">
                     <Calendar size={16} className="me-2" />
                     Línea de Tiempo
                   </Nav.Link>
                 </Nav.Item>
                 <Nav.Item>
-                  <Nav.Link eventKey="geography" className="text-light">
+                  <Nav.Link eventKey="geography">
                     <MapPin size={16} className="me-2" />
                     Análisis Geográfico
                   </Nav.Link>
                 </Nav.Item>
                 <Nav.Item>
-                  <Nav.Link eventKey="network" className="text-light">
+                  <Nav.Link eventKey="network">
                     <Network size={16} className="me-2" />
                     Análisis de Red
                   </Nav.Link>
@@ -692,9 +1221,9 @@ const InvestigationWorkspace: React.FC = () => {
                   <Row className="g-3">
                     {/* Panel de entidades */}
                     <Col lg={6}>
-                      <Card className="bg-dark border-secondary h-100">
-                        <Card.Header className="bg-dark border-secondary d-flex justify-content-between align-items-center">
-                          <h6 className="mb-0 text-light">Entidades ({filteredEntities.length})</h6>
+                      <Card className="h-100">
+                        <Card.Header className="d-flex justify-content-between align-items-center">
+                          <h6 className="mb-0">Entidades ({filteredEntities.length})</h6>
                           <div className="d-flex gap-2">
                             <OverlayTrigger
                               placement="top"
@@ -721,7 +1250,7 @@ const InvestigationWorkspace: React.FC = () => {
                         
                         <Card.Body className="p-0">
                           {showAdvancedFilters && (
-                            <div className="p-3 border-bottom border-secondary">
+                            <div className="p-3 border-bottom">
                               <Row className="g-2">
                                 <Col md={6}>
                                   <Form.Select size="sm" value={entityTypeFilter} onChange={(e) => setEntityTypeFilter(e.target.value)}>
@@ -746,14 +1275,13 @@ const InvestigationWorkspace: React.FC = () => {
                           
                           <div className="p-3">
                             <InputGroup size="sm" className="mb-3">
-                              <InputGroup.Text className="bg-dark border-secondary text-light">
+                              <InputGroup.Text>
                                 <Search size={14} />
                               </InputGroup.Text>
                               <Form.Control
                                 placeholder="Buscar entidades..."
                                 value={entityFilter}
                                 onChange={(e) => setEntityFilter(e.target.value)}
-                                className="bg-dark border-secondary text-light"
                               />
                             </InputGroup>
                           </div>
@@ -767,7 +1295,7 @@ const InvestigationWorkspace: React.FC = () => {
                             ) : (
                               <ListGroup variant="flush">
                                 {filteredEntities.map((entity) => (
-                                  <ListGroup.Item key={entity.id} className="bg-dark border-secondary text-light">
+                                  <ListGroup.Item key={entity.id}>
                                     <div className="d-flex justify-content-between align-items-start">
                                       <div className="flex-grow-1">
                                         <div className="d-flex align-items-center gap-2 mb-1">
@@ -785,9 +1313,8 @@ const InvestigationWorkspace: React.FC = () => {
                                         <Dropdown.Toggle variant="outline-secondary" size="sm">
                                           <Edit size={14} />
                                         </Dropdown.Toggle>
-                                        <Dropdown.Menu className="bg-dark border-secondary">
+                                        <Dropdown.Menu>
                                           <Dropdown.Item 
-                                            className="text-light" 
                                             onClick={() => handleEditEntity(entity)}
                                           >
                                             <Edit size={14} className="me-2" />
@@ -795,7 +1322,7 @@ const InvestigationWorkspace: React.FC = () => {
                                           </Dropdown.Item>
                                           <Dropdown.Item 
                                             className="text-danger" 
-                                            onClick={() => setShowDeleteConfirm(entity.id)}
+                                            onClick={() => handleDeleteEntity(entity.id)}
                                           >
                                             <Trash2 size={14} className="me-2" />
                                             Eliminar
@@ -811,12 +1338,12 @@ const InvestigationWorkspace: React.FC = () => {
                         </Card.Body>
                       </Card>
                     </Col>
-                    
+
                     {/* Panel de ejecuciones OSINT */}
                     <Col lg={6}>
-                      <Card className="bg-dark border-secondary h-100">
-                        <Card.Header className="bg-dark border-secondary d-flex justify-content-between align-items-center">
-                          <h6 className="mb-0 text-light">Ejecuciones OSINT ({executions.length})</h6>
+                      <Card className="h-100">
+                        <Card.Header className="d-flex justify-content-between align-items-center">
+                          <h6 className="mb-0">Ejecuciones OSINT ({executions.length})</h6>
                           <Button 
                             variant="outline-primary" 
                             size="sm" 
@@ -846,8 +1373,10 @@ const InvestigationWorkspace: React.FC = () => {
                               <div className="p-3">
                                 {executions.map((execution) => {
                                   const tool = osintTools.find(t => t.id === execution.toolId);
+                                  const canCancel = execution.status === 'pending' || execution.status === 'running';
+                                  const canRetry = execution.status === 'failed' || execution.status === 'cancelled';
                                   return (
-                                    <Card key={execution.id} className="bg-dark border-secondary mb-3">
+                                    <Card key={execution.id} className="mb-3">
                                       <Card.Body className="p-3">
                                         <div className="d-flex justify-content-between align-items-center mb-2">
                                           <div className="d-flex align-items-center gap-2">
@@ -859,16 +1388,50 @@ const InvestigationWorkspace: React.FC = () => {
                                               }`}
                                               style={{ width: '8px', height: '8px' }}
                                             />
-                                            <h6 className="mb-0 text-light small">{tool?.name}</h6>
+                                            <h6 className="mb-0 small">{tool?.name ?? execution.toolId}</h6>
                                           </div>
-                                          <Badge bg={getStatusVariant(execution.status)} className="small">
-                                            {getStatusIcon(execution.status)}
-                                            <span className="ms-1">
-                                              {execution.status === 'completed' ? 'Completado' :
-                                               execution.status === 'running' ? 'Ejecutando' :
-                                               execution.status === 'failed' ? 'Fallido' : 'Pendiente'}
-                                            </span>
-                                          </Badge>
+                                          <div className="d-flex align-items-center gap-2">
+                                            <Button
+                                              variant="outline-info"
+                                              size="sm"
+                                              onClick={() => setShowExecutionDetails(execution.id)}
+                                            >
+                                              <Eye size={14} className="me-1" />
+                                              Detalles
+                                            </Button>
+                                            {canCancel && (
+                                              <Button
+                                                variant="outline-danger"
+                                                size="sm"
+                                                disabled={executionActionLoading[`${execution.id}_cancel`]}
+                                                onClick={() => handleExecutionAction(execution.id, 'cancel')}
+                                              >
+                                                <X size={14} className="me-1" />
+                                                Cancelar
+                                              </Button>
+                                            )}
+                                            {canRetry && (
+                                              <Button
+                                                variant="outline-warning"
+                                                size="sm"
+                                                disabled={executionActionLoading[`${execution.id}_retry`]}
+                                                onClick={() => handleExecutionAction(execution.id, 'retry')}
+                                              >
+                                                <RefreshCw size={14} className="me-1" />
+                                                Reintentar
+                                              </Button>
+                                            )}
+                                            <Badge bg={getStatusVariant(execution.status)} className="small">
+                                              {getStatusIcon(execution.status)}
+                                              <span className="ms-1">
+                                                {execution.status === 'completed' ? 'Completado' :
+                                                 execution.status === 'running' ? 'Ejecutando' :
+                                                 execution.status === 'failed' ? 'Fallido' :
+                                                 execution.status === 'cancelled' ? 'Cancelado' :
+                                                 'Pendiente'}
+                                              </span>
+                                            </Badge>
+                                          </div>
                                         </div>
                                         
                                         {execution.status === 'running' && (
@@ -906,115 +1469,175 @@ const InvestigationWorkspace: React.FC = () => {
                         </Card.Body>
                       </Card>
                     </Col>
+
+                    <Col lg={12}>
+                      <Card>
+                        <Card.Header className="d-flex justify-content-between align-items-center">
+                          <h6 className="mb-0">Auto Recon - Último resultado</h6>
+                          <Badge bg={autoReconResult?.status === 'completed' ? 'success' : autoReconResult?.status === 'failed' ? 'danger' : 'secondary'}>
+                            {autoReconResult?.status ?? 'Sin datos'}
+                          </Badge>
+                        </Card.Header>
+                        <Card.Body>
+                          {autoReconLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" />
+                            </div>
+                          ) : autoReconError ? (
+                            <Alert variant="danger" className="mb-0">{autoReconError}</Alert>
+                          ) : !autoReconResult ? (
+                            <div className="text-muted">Aún no se ha ejecutado Auto Recon en esta sesión.</div>
+                          ) : (
+                            <>
+                              <div className="mb-3">
+                                <strong className="text-muted">Objetivo:</strong>
+                                <span className="ms-2">{autoReconResult?.target ?? '-'}</span>
+                              </div>
+                              <ListGroup>
+                                {Object.entries(autoReconResult?.tools ?? {}).map(([toolName, toolData]: any) => {
+                                  const hasError = Boolean(toolData?.error);
+                                  const resultCount = Array.isArray(toolData?.results) ? toolData.results.length : 0;
+                                  const expanded = !!autoReconExpanded[toolName];
+                                  const summaryLines = buildAutoReconSummary(toolName, toolData);
+                                  return (
+                                    <ListGroup.Item key={toolName}>
+                                      <div className="d-flex justify-content-between align-items-center">
+                                        <div className="d-flex flex-column">
+                                          <span className="text-capitalize">{toolName}</span>
+                                          {!hasError && (
+                                            <span className="small text-muted">
+                                              Resultados: {resultCount}
+                                            </span>
+                                          )}
+                                          {summaryLines.length > 0 && (
+                                            <div className="small text-muted mt-1">
+                                              {summaryLines.map((line, index) => (
+                                                <div key={`${toolName}-${index}`}>{line}</div>
+                                              ))}
+                                            </div>
+                                          )}
+                                          {toolData?.metadata?.error && (
+                                            <div className="small text-warning mt-1">
+                                              {toolData.metadata.error}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="d-flex align-items-center gap-2">
+                                          <Button
+                                            variant="outline-info"
+                                            size="sm"
+                                            onClick={() => setAutoReconExpanded(prev => ({
+                                              ...prev,
+                                              [toolName]: !expanded
+                                            }))}
+                                          >
+                                            {expanded ? 'Ocultar' : 'Ver'}
+                                          </Button>
+                                          <Badge bg={hasError ? 'warning' : 'success'}>
+                                            {hasError ? toolData.error : 'OK'}
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                      {expanded && (
+                                        <div className="mt-2">
+                                          <pre className="small mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                                            {JSON.stringify(toolData, null, 2)}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </ListGroup.Item>
+                                  );
+                                })}
+                              </ListGroup>
+                            </>
+                          )}
+                        </Card.Body>
+                      </Card>
+                    </Col>
                   </Row>
                 </Tab.Pane>
                 
                 <Tab.Pane eventKey="analysis">
                   <Row>
                     <Col md={6}>
-                      <Card className="bg-dark border-secondary mb-3">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Nivel de Amenaza por Categoría</h6>
+                      <Card className="mb-3">
+                        <Card.Header>
+                          <h6 className="mb-0">Distribución de Entidades</h6>
                         </Card.Header>
                         <Card.Body>
-                          <div className="mb-3">
-                            <div className="d-flex justify-content-between mb-1">
-                              <span className="small text-muted">Malware</span>
-                              <span className="small text-danger">Alto (85%)</span>
+                          {statsLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" variant="light" />
                             </div>
-                            <ProgressBar variant="danger" now={85} style={{ height: '8px' }} />
-                          </div>
-                          <div className="mb-3">
-                            <div className="d-flex justify-content-between mb-1">
-                              <span className="small text-muted">Phishing</span>
-                              <span className="small text-warning">Medio (65%)</span>
-                            </div>
-                            <ProgressBar variant="warning" now={65} style={{ height: '8px' }} />
-                          </div>
-                          <div className="mb-3">
-                            <div className="d-flex justify-content-between mb-1">
-                              <span className="small text-muted">Botnet</span>
-                              <span className="small text-info">Bajo (30%)</span>
-                            </div>
-                            <ProgressBar variant="info" now={30} style={{ height: '8px' }} />
-                          </div>
-                          <div className="mb-3">
-                            <div className="d-flex justify-content-between mb-1">
-                              <span className="small text-muted">APT</span>
-                              <span className="small text-danger">Crítico (95%)</span>
-                            </div>
-                            <ProgressBar variant="danger" now={95} style={{ height: '8px' }} />
-                          </div>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : entityTypeStats.length === 0 ? (
+                            <div className="text-muted small">Sin datos disponibles</div>
+                          ) : (
+                            entityTypeStats.slice(0, 5).map((item) => (
+                              <div className="mb-3" key={item.type}>
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span className="small text-muted">{formatEntityType(item.type)}</span>
+                                  <span className="small">{item.count} ({item.percent}%)</span>
+                                </div>
+                                <ProgressBar variant="info" now={item.percent} style={{ height: '8px' }} />
+                              </div>
+                            ))
+                          )}
                         </Card.Body>
                       </Card>
                     </Col>
                     <Col md={6}>
-                      <Card className="bg-dark border-secondary mb-3">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Indicadores de Compromiso (IoCs)</h6>
+                      <Card className="mb-3">
+                        <Card.Header>
+                          <h6 className="mb-0">Indicadores (IoCs)</h6>
                         </Card.Header>
                         <Card.Body>
-                          <ListGroup variant="flush">
-                            <ListGroup.Item className="bg-dark border-secondary text-light d-flex justify-content-between">
-                              <span className="small">IPs Maliciosas</span>
-                              <Badge bg="danger">12</Badge>
-                            </ListGroup.Item>
-                            <ListGroup.Item className="bg-dark border-secondary text-light d-flex justify-content-between">
-                              <span className="small">Dominios Sospechosos</span>
-                              <Badge bg="warning">8</Badge>
-                            </ListGroup.Item>
-                            <ListGroup.Item className="bg-dark border-secondary text-light d-flex justify-content-between">
-                              <span className="small">Hashes Maliciosos</span>
-                              <Badge bg="danger">15</Badge>
-                            </ListGroup.Item>
-                            <ListGroup.Item className="bg-dark border-secondary text-light d-flex justify-content-between">
-                              <span className="small">URLs Phishing</span>
-                              <Badge bg="warning">6</Badge>
-                            </ListGroup.Item>
-                          </ListGroup>
+                          {statsLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" variant="light" />
+                            </div>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : iocStats.length === 0 ? (
+                            <div className="text-muted small">Sin indicadores detectados</div>
+                          ) : (
+                            <ListGroup variant="flush">
+                              {iocStats.map((item) => (
+                                <ListGroup.Item key={item.type} className="d-flex justify-content-between">
+                                  <span className="small">{formatEntityType(item.type)}</span>
+                                  <Badge bg="warning">{item.count}</Badge>
+                                </ListGroup.Item>
+                              ))}
+                            </ListGroup>
+                          )}
                         </Card.Body>
                       </Card>
                     </Col>
                   </Row>
-                  <Card className="bg-dark border-secondary">
-                    <Card.Header className="bg-dark border-secondary">
-                      <h6 className="mb-0 text-light">Análisis de Riesgo Detallado</h6>
+                  <Card>
+                    <Card.Header>
+                      <h6 className="mb-0">Estado de Ejecuciones</h6>
                     </Card.Header>
                     <Card.Body>
-                      <Table variant="dark" size="sm">
-                        <thead>
-                          <tr>
-                            <th>Entidad</th>
-                            <th>Tipo</th>
-                            <th>Nivel de Riesgo</th>
-                            <th>Última Actividad</th>
-                            <th>Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td>192.168.1.100</td>
-                            <td><Badge bg="info">IP</Badge></td>
-                            <td><Badge bg="danger">Crítico</Badge></td>
-                            <td>Hace 2 horas</td>
-                            <td><Button size="sm" variant="outline-primary">Analizar</Button></td>
-                          </tr>
-                          <tr>
-                            <td>malicious-domain.com</td>
-                            <td><Badge bg="warning">Dominio</Badge></td>
-                            <td><Badge bg="warning">Alto</Badge></td>
-                            <td>Hace 1 día</td>
-                            <td><Button size="sm" variant="outline-primary">Analizar</Button></td>
-                          </tr>
-                          <tr>
-                            <td>suspicious@email.com</td>
-                            <td><Badge bg="success">Email</Badge></td>
-                            <td><Badge bg="info">Medio</Badge></td>
-                            <td>Hace 3 días</td>
-                            <td><Button size="sm" variant="outline-primary">Analizar</Button></td>
-                          </tr>
-                        </tbody>
-                      </Table>
+                      {statsLoading ? (
+                        <div className="text-center py-3">
+                          <Spinner animation="border" size="sm" variant="light" />
+                        </div>
+                      ) : statsError ? (
+                        <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                      ) : executionStatusStats.length === 0 ? (
+                        <div className="text-muted small">Sin ejecuciones registradas</div>
+                      ) : (
+                        <ListGroup variant="flush">
+                          {executionStatusStats.map((item) => (
+                            <ListGroup.Item key={item.status} className="d-flex justify-content-between">
+                              <span className="small text-capitalize">{item.status}</span>
+                              <Badge bg="secondary">{item.count}</Badge>
+                            </ListGroup.Item>
+                          ))}
+                        </ListGroup>
+                      )}
                     </Card.Body>
                   </Card>
                 </Tab.Pane>
@@ -1022,10 +1645,10 @@ const InvestigationWorkspace: React.FC = () => {
                 <Tab.Pane eventKey="timeline">
                   <Row>
                     <Col md={8}>
-                      <Card className="bg-dark border-secondary">
-                        <Card.Header className="bg-dark border-secondary d-flex justify-content-between align-items-center">
-                          <h6 className="mb-0 text-light">Cronología de Eventos</h6>
-                          <Form.Select size="sm" style={{ width: 'auto' }} className="bg-dark text-light border-secondary">
+                      <Card>
+                        <Card.Header className="d-flex justify-content-between align-items-center">
+                          <h6 className="mb-0">Cronología de Eventos</h6>
+                          <Form.Select size="sm" style={{ width: 'auto' }}>
                             <option>Últimas 24 horas</option>
                             <option>Última semana</option>
                             <option>Último mes</option>
@@ -1034,131 +1657,76 @@ const InvestigationWorkspace: React.FC = () => {
                         </Card.Header>
                         <Card.Body>
                           <div className="timeline">
-                            <div className="timeline-item mb-4">
-                              <div className="timeline-marker bg-success"></div>
-                              <div className="timeline-content">
-                                <div className="d-flex justify-content-between align-items-start mb-2">
-                                  <h6 className="text-light mb-1">Investigación Iniciada</h6>
-                                  <small className="text-muted">Hace 2 días</small>
+                            {timelineItems.length === 0 ? (
+                              <div className="text-muted small">Sin eventos</div>
+                            ) : (
+                              timelineItems.map((item, idx) => (
+                                <div key={idx} className="timeline-item mb-4">
+                                  <div className={`timeline-marker bg-${item.color}`}></div>
+                                  <div className="timeline-content">
+                                    <div className="d-flex justify-content-between align-items-start mb-2">
+                                      <h6 className="mb-1">{item.title}</h6>
+                                      <small className="text-muted">{item.timestamp.toLocaleString()}</small>
+                                    </div>
+                                    <p className="small text-muted mb-1">{item.description}</p>
+                                    <Badge bg={item.color} className="small">{item.badge}</Badge>
+                                  </div>
                                 </div>
-                                <p className="small text-muted mb-1">Se creó la investigación y se agregaron las primeras entidades objetivo.</p>
-                                <Badge bg="success" className="small">Sistema</Badge>
-                              </div>
-                            </div>
-                            
-                            <div className="timeline-item mb-4">
-                              <div className="timeline-marker bg-primary"></div>
-                              <div className="timeline-content">
-                                <div className="d-flex justify-content-between align-items-start mb-2">
-                                  <h6 className="text-light mb-1">Escaneo Nmap Completado</h6>
-                                  <small className="text-muted">Hace 1 día</small>
-                                </div>
-                                <p className="small text-muted mb-1">Se identificaron 15 puertos abiertos en el objetivo 192.168.1.100</p>
-                                <Badge bg="primary" className="small">OSINT</Badge>
-                              </div>
-                            </div>
-                            
-                            <div className="timeline-item mb-4">
-                              <div className="timeline-marker bg-warning"></div>
-                              <div className="timeline-content">
-                                <div className="d-flex justify-content-between align-items-start mb-2">
-                                  <h6 className="text-light mb-1">Amenaza Detectada</h6>
-                                  <small className="text-muted">Hace 18 horas</small>
-                                </div>
-                                <p className="small text-muted mb-1">Se detectó actividad sospechosa en malicious-domain.com</p>
-                                <Badge bg="warning" className="small">Alerta</Badge>
-                              </div>
-                            </div>
-                            
-                            <div className="timeline-item mb-4">
-                              <div className="timeline-marker bg-info"></div>
-                              <div className="timeline-content">
-                                <div className="d-flex justify-content-between align-items-start mb-2">
-                                  <h6 className="text-light mb-1">Análisis TheHarvester</h6>
-                                  <small className="text-muted">Hace 12 horas</small>
-                                </div>
-                                <p className="small text-muted mb-1">Se recopilaron 25 emails y 8 subdominios del dominio objetivo</p>
-                                <Badge bg="info" className="small">OSINT</Badge>
-                              </div>
-                            </div>
-                            
-                            <div className="timeline-item mb-4">
-                              <div className="timeline-marker bg-danger"></div>
-                              <div className="timeline-content">
-                                <div className="d-flex justify-content-between align-items-start mb-2">
-                                  <h6 className="text-light mb-1">IoC Crítico Identificado</h6>
-                                  <small className="text-muted">Hace 6 horas</small>
-                                </div>
-                                <p className="small text-muted mb-1">Hash malicioso confirmado en base de datos de amenazas</p>
-                                <Badge bg="danger" className="small">Crítico</Badge>
-                              </div>
-                            </div>
-                            
-                            <div className="timeline-item">
-                              <div className="timeline-marker bg-secondary"></div>
-                              <div className="timeline-content">
-                                <div className="d-flex justify-content-between align-items-start mb-2">
-                                  <h6 className="text-light mb-1">Entidad Agregada</h6>
-                                  <small className="text-muted">Hace 2 horas</small>
-                                </div>
-                                <p className="small text-muted mb-1">Nueva IP sospechosa agregada para análisis: 10.0.0.50</p>
-                                <Badge bg="secondary" className="small">Manual</Badge>
-                              </div>
-                            </div>
+                              ))
+                            )}
                           </div>
                         </Card.Body>
                       </Card>
                     </Col>
                     <Col md={4}>
-                      <Card className="bg-dark border-secondary mb-3">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Estadísticas de Actividad</h6>
+                      <Card className="mb-3">
+                        <Card.Header>
+                          <h6 className="mb-0">Estadísticas de Actividad</h6>
                         </Card.Header>
                         <Card.Body>
                           <div className="mb-3">
                             <div className="d-flex justify-content-between mb-1">
                               <span className="small text-muted">Eventos Hoy</span>
-                              <span className="small text-light">8</span>
+                              <span className="small">8</span>
                             </div>
                             <div className="d-flex justify-content-between mb-1">
                               <span className="small text-muted">Esta Semana</span>
-                              <span className="small text-light">24</span>
+                              <span className="small">24</span>
                             </div>
                             <div className="d-flex justify-content-between mb-1">
                               <span className="small text-muted">Total</span>
-                              <span className="small text-light">156</span>
+                              <span className="small">156</span>
                             </div>
                           </div>
                         </Card.Body>
                       </Card>
                       
-                      <Card className="bg-dark border-secondary">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Filtros</h6>
+                      <Card>
+                        <Card.Header>
+                          <h6 className="mb-0">Filtros</h6>
                         </Card.Header>
                         <Card.Body>
                           <Form.Check 
                             type="checkbox" 
                             label="Eventos del Sistema" 
-                            className="text-light mb-2" 
+                            className="mb-2" 
                             defaultChecked
                           />
                           <Form.Check 
                             type="checkbox" 
                             label="Herramientas OSINT" 
-                            className="text-light mb-2" 
+                            className="mb-2" 
                             defaultChecked
                           />
                           <Form.Check 
                             type="checkbox" 
                             label="Alertas de Seguridad" 
-                            className="text-light mb-2" 
+                            className="mb-2" 
                             defaultChecked
                           />
                           <Form.Check 
                             type="checkbox" 
                             label="Acciones Manuales" 
-                            className="text-light" 
                             defaultChecked
                           />
                         </Card.Body>
@@ -1170,154 +1738,87 @@ const InvestigationWorkspace: React.FC = () => {
                 <Tab.Pane eventKey="geography">
                   <Row>
                     <Col md={8}>
-                      <Card className="bg-dark border-secondary">
-                        <Card.Header className="bg-dark border-secondary d-flex justify-content-between align-items-center">
-                          <h6 className="mb-0 text-light">Mapa de Amenazas Globales</h6>
-                          <div className="d-flex gap-2">
-                            <Form.Select size="sm" style={{ width: 'auto' }} className="bg-dark text-light border-secondary">
-                              <option>Todas las amenazas</option>
-                              <option>IPs maliciosas</option>
-                              <option>Dominios sospechosos</option>
-                              <option>Ataques recientes</option>
-                            </Form.Select>
-                            <Button variant="outline-secondary" size="sm">
-                              <RefreshCw size={14} />
-                            </Button>
-                          </div>
+                      <Card>
+                        <Card.Header className="d-flex justify-content-between align-items-center">
+                          <h6 className="mb-0">Mapa de Amenazas</h6>
                         </Card.Header>
                         <Card.Body>
-                          <div className="position-relative" style={{ height: '400px', backgroundColor: '#1a1a1a', borderRadius: '8px' }}>
-                            <div className="position-absolute top-50 start-50 translate-middle text-center">
-                              <MapPin size={48} className="mb-3 text-muted opacity-50" />
-                              <h6 className="text-muted">Mapa Interactivo</h6>
-                              <p className="small text-muted">Integración con servicio de mapas en desarrollo</p>
+                          {statsLoading ? (
+                            <div className="text-center py-4">
+                              <Spinner animation="border" size="sm" variant="light" />
                             </div>
-                            
-                            {/* Simulación de marcadores en el mapa */}
-                            <div className="position-absolute" style={{ top: '20%', left: '15%' }}>
-                              <div className="bg-danger rounded-circle" style={{ width: '12px', height: '12px' }} title="Rusia - 15 amenazas"></div>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : (
+                            <div className="position-relative" style={{ height: '400px', backgroundColor: '#1a1a1a', borderRadius: '8px' }}>
+                              <div className="position-absolute top-50 start-50 translate-middle text-center">
+                                <MapPin size={48} className="mb-3 text-muted opacity-50" />
+                                <h6 className="text-muted">Sin datos geográficos reales</h6>
+                                <p className="small text-muted">Agrega entidades geolocalizadas para visualizar el mapa</p>
+                              </div>
                             </div>
-                            <div className="position-absolute" style={{ top: '35%', left: '25%' }}>
-                              <div className="bg-warning rounded-circle" style={{ width: '8px', height: '8px' }} title="China - 8 amenazas"></div>
-                            </div>
-                            <div className="position-absolute" style={{ top: '45%', left: '45%' }}>
-                              <div className="bg-danger rounded-circle" style={{ width: '10px', height: '10px' }} title="Irán - 12 amenazas"></div>
-                            </div>
-                            <div className="position-absolute" style={{ top: '60%', left: '70%' }}>
-                              <div className="bg-warning rounded-circle" style={{ width: '6px', height: '6px' }} title="Brasil - 4 amenazas"></div>
-                            </div>
-                          </div>
+                          )}
                         </Card.Body>
                       </Card>
                     </Col>
                     <Col md={4}>
-                      <Card className="bg-dark border-secondary mb-3">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Top Países por Amenazas</h6>
+                      <Card className="mb-3">
+                        <Card.Header>
+                          <h6 className="mb-0">Resumen Geográfico</h6>
                         </Card.Header>
                         <Card.Body>
-                          <div className="mb-3">
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-danger rounded-circle me-2" style={{ width: '8px', height: '8px' }}></div>
-                                <span className="small text-light">Rusia</span>
+                          {statsLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" variant="light" />
+                            </div>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : (
+                            <>
+                              <div className="d-flex justify-content-between mb-2">
+                                <span className="small text-muted">Geolocalizaciones</span>
+                                <span className="small">{geographySummary.geolocations}</span>
                               </div>
-                              <span className="small text-muted">15 (38%)</span>
-                            </div>
-                            <div className="progress mb-3" style={{ height: '4px' }}>
-                              <div className="progress-bar bg-danger" style={{ width: '38%' }}></div>
-                            </div>
-                            
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-danger rounded-circle me-2" style={{ width: '8px', height: '8px' }}></div>
-                                <span className="small text-light">Irán</span>
+                              <div className="d-flex justify-content-between mb-2">
+                                <span className="small text-muted">IPs</span>
+                                <span className="small">{geographySummary.ips}</span>
                               </div>
-                              <span className="small text-muted">12 (30%)</span>
-                            </div>
-                            <div className="progress mb-3" style={{ height: '4px' }}>
-                              <div className="progress-bar bg-danger" style={{ width: '30%' }}></div>
-                            </div>
-                            
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-warning rounded-circle me-2" style={{ width: '8px', height: '8px' }}></div>
-                                <span className="small text-light">China</span>
+                              <div className="d-flex justify-content-between">
+                                <span className="small text-muted">Dominios</span>
+                                <span className="small">{geographySummary.domains}</span>
                               </div>
-                              <span className="small text-muted">8 (20%)</span>
-                            </div>
-                            <div className="progress mb-3" style={{ height: '4px' }}>
-                              <div className="progress-bar bg-warning" style={{ width: '20%' }}></div>
-                            </div>
-                            
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-warning rounded-circle me-2" style={{ width: '8px', height: '8px' }}></div>
-                                <span className="small text-light">Brasil</span>
-                              </div>
-                              <span className="small text-muted">4 (10%)</span>
-                            </div>
-                            <div className="progress" style={{ height: '4px' }}>
-                              <div className="progress-bar bg-warning" style={{ width: '10%' }}></div>
-                            </div>
-                          </div>
+                            </>
+                          )}
                         </Card.Body>
                       </Card>
                       
-                      <Card className="bg-dark border-secondary mb-3">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Ubicaciones Recientes</h6>
+                      <Card>
+                        <Card.Header>
+                          <h6 className="mb-0">Cobertura</h6>
                         </Card.Header>
                         <Card.Body>
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <span className="small text-light">185.220.101.42</span>
-                              <Badge bg="danger" className="small">Alto</Badge>
+                          {statsLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" variant="light" />
                             </div>
-                            <div className="small text-muted">Moscú, Rusia</div>
-                          </div>
-                          <hr className="border-secondary" />
-                          
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <span className="small text-light">malicious-domain.com</span>
-                              <Badge bg="warning" className="small">Medio</Badge>
-                            </div>
-                            <div className="small text-muted">Teherán, Irán</div>
-                          </div>
-                          <hr className="border-secondary" />
-                          
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <span className="small text-light">123.45.67.89</span>
-                              <Badge bg="warning" className="small">Medio</Badge>
-                            </div>
-                            <div className="small text-muted">Beijing, China</div>
-                          </div>
-                        </Card.Body>
-                      </Card>
-                      
-                      <Card className="bg-dark border-secondary">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Estadísticas Geográficas</h6>
-                        </Card.Header>
-                        <Card.Body>
-                          <div className="d-flex justify-content-between mb-2">
-                            <span className="small text-muted">Países Únicos</span>
-                            <span className="small text-light">12</span>
-                          </div>
-                          <div className="d-flex justify-content-between mb-2">
-                            <span className="small text-muted">Ciudades Únicas</span>
-                            <span className="small text-light">28</span>
-                          </div>
-                          <div className="d-flex justify-content-between mb-2">
-                            <span className="small text-muted">IPs Geolocalizadas</span>
-                            <span className="small text-light">156/180</span>
-                          </div>
-                          <div className="d-flex justify-content-between">
-                            <span className="small text-muted">Precisión Promedio</span>
-                            <span className="small text-light">87%</span>
-                          </div>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : (
+                            <>
+                              <div className="d-flex justify-content-between mb-2">
+                                <span className="small text-muted">Entidades Totales</span>
+                                <span className="small">{networkSummary.totalNodes}</span>
+                              </div>
+                              <div className="d-flex justify-content-between">
+                                <span className="small text-muted">Cobertura Geográfica</span>
+                                <span className="small">
+                                  {networkSummary.totalNodes > 0
+                                    ? Math.round((geographySummary.geolocations * 100) / networkSummary.totalNodes)
+                                    : 0}%
+                                </span>
+                              </div>
+                            </>
+                          )}
                         </Card.Body>
                       </Card>
                     </Col>
@@ -1327,11 +1828,11 @@ const InvestigationWorkspace: React.FC = () => {
                 <Tab.Pane eventKey="network">
                   <Row>
                     <Col md={8}>
-                      <Card className="bg-dark border-secondary">
-                        <Card.Header className="bg-dark border-secondary d-flex justify-content-between align-items-center">
-                          <h6 className="mb-0 text-light">Grafo de Relaciones</h6>
+                      <Card>
+                        <Card.Header className="d-flex justify-content-between align-items-center">
+                          <h6 className="mb-0">Grafo de Relaciones</h6>
                           <div className="d-flex gap-2">
-                            <Form.Select size="sm" style={{ width: 'auto' }} className="bg-dark text-light border-secondary">
+                            <Form.Select size="sm" style={{ width: 'auto' }}>
                               <option>Vista completa</option>
                               <option>Solo IPs</option>
                               <option>Solo dominios</option>
@@ -1349,142 +1850,106 @@ const InvestigationWorkspace: React.FC = () => {
                           <div className="position-relative" style={{ height: '450px', backgroundColor: '#1a1a1a', borderRadius: '8px', overflow: 'hidden' }}>
                             <div className="position-absolute top-50 start-50 translate-middle text-center">
                               <Network size={48} className="mb-3 text-muted opacity-50" />
-                              <h6 className="text-muted">Visualización de Red</h6>
-                              <p className="small text-muted">Gráfico interactivo de conexiones</p>
+                              {statsLoading ? (
+                                <div className="text-muted">Cargando datos de red...</div>
+                              ) : statsError ? (
+                                <div className="text-muted">Error al cargar datos de red</div>
+                              ) : networkSummary.totalNodes === 0 && networkSummary.totalEdges === 0 ? (
+                                <>
+                                  <h6 className="text-muted">Sin datos reales</h6>
+                                  <p className="small text-muted">Agrega entidades y relaciones para visualizar el grafo</p>
+                                </>
+                              ) : (
+                                <>
+                                  <h6 className="text-muted">Datos de red disponibles</h6>
+                                  <p className="small text-muted">
+                                    {networkSummary.totalNodes} nodos · {networkSummary.totalEdges} conexiones
+                                  </p>
+                                </>
+                              )}
                             </div>
-                            
-                            {/* Simulación de nodos y conexiones */}
-                            <svg width="100%" height="100%" className="position-absolute top-0 start-0">
-                              {/* Conexiones */}
-                              <line x1="150" y1="100" x2="300" y2="150" stroke="#6c757d" strokeWidth="2" opacity="0.6" />
-                              <line x1="300" y1="150" x2="450" y2="120" stroke="#dc3545" strokeWidth="3" opacity="0.8" />
-                              <line x1="300" y1="150" x2="350" y2="280" stroke="#ffc107" strokeWidth="2" opacity="0.6" />
-                              <line x1="150" y1="100" x2="200" y2="250" stroke="#28a745" strokeWidth="2" opacity="0.6" />
-                              <line x1="450" y1="120" x2="500" y2="300" stroke="#17a2b8" strokeWidth="2" opacity="0.6" />
-                              
-                              {/* Nodos principales */}
-                              <circle cx="150" cy="100" r="15" fill="#28a745" opacity="0.9" />
-                              <circle cx="300" cy="150" r="20" fill="#dc3545" opacity="0.9" />
-                              <circle cx="450" cy="120" r="12" fill="#ffc107" opacity="0.9" />
-                              <circle cx="350" cy="280" r="10" fill="#17a2b8" opacity="0.9" />
-                              <circle cx="200" cy="250" r="8" fill="#6c757d" opacity="0.9" />
-                              <circle cx="500" cy="300" r="8" fill="#6f42c1" opacity="0.9" />
-                              
-                              {/* Etiquetas */}
-                              <text x="150" y="85" textAnchor="middle" fill="#fff" fontSize="10">Target IP</text>
-                              <text x="300" y="135" textAnchor="middle" fill="#fff" fontSize="10">Malicious</text>
-                              <text x="450" y="105" textAnchor="middle" fill="#fff" fontSize="10">Suspicious</text>
-                              <text x="350" y="295" textAnchor="middle" fill="#fff" fontSize="8">Related</text>
-                              <text x="200" y="265" textAnchor="middle" fill="#fff" fontSize="8">Clean</text>
-                              <text x="500" y="315" textAnchor="middle" fill="#fff" fontSize="8">Unknown</text>
-                            </svg>
                           </div>
                         </Card.Body>
                       </Card>
                     </Col>
                     <Col md={4}>
-                      <Card className="bg-dark border-secondary mb-3">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Métricas de Red</h6>
+                      <Card className="mb-3">
+                        <Card.Header>
+                          <h6 className="mb-0">Métricas de Red</h6>
                         </Card.Header>
                         <Card.Body>
-                          <div className="mb-3">
-                            <div className="d-flex justify-content-between mb-2">
-                              <span className="small text-muted">Nodos Totales</span>
-                              <span className="small text-light">24</span>
+                          {statsLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" variant="light" />
                             </div>
-                            <div className="d-flex justify-content-between mb-2">
-                              <span className="small text-muted">Conexiones</span>
-                              <span className="small text-light">18</span>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : (
+                            <div className="mb-3">
+                              <div className="d-flex justify-content-between mb-2">
+                                <span className="small text-muted">Nodos Totales</span>
+                                <span className="small">{networkSummary.totalNodes}</span>
+                              </div>
+                              <div className="d-flex justify-content-between mb-2">
+                                <span className="small text-muted">Conexiones</span>
+                                <span className="small">{networkSummary.totalEdges}</span>
+                              </div>
+                              <div className="d-flex justify-content-between mb-2">
+                                <span className="small text-muted">Densidad</span>
+                                <span className="small">{networkSummary.density}</span>
+                              </div>
+                              <div className="d-flex justify-content-between">
+                                <span className="small text-muted">Componentes</span>
+                                <span className="small">N/D</span>
+                              </div>
                             </div>
-                            <div className="d-flex justify-content-between mb-2">
-                              <span className="small text-muted">Densidad</span>
-                              <span className="small text-light">0.65</span>
-                            </div>
-                            <div className="d-flex justify-content-between">
-                              <span className="small text-muted">Componentes</span>
-                              <span className="small text-light">3</span>
-                            </div>
-                          </div>
+                          )}
                         </Card.Body>
                       </Card>
                       
-                      <Card className="bg-dark border-secondary mb-3">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Nodos Centrales</h6>
+                      <Card className="mb-3">
+                        <Card.Header>
+                          <h6 className="mb-0">Nodos Centrales</h6>
                         </Card.Header>
                         <Card.Body>
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-danger rounded-circle me-2" style={{ width: '8px', height: '8px' }}></div>
-                                <span className="small text-light">185.220.101.42</span>
-                              </div>
-                              <Badge bg="danger" className="small">Hub</Badge>
+                          {statsLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" variant="light" />
                             </div>
-                            <div className="small text-muted">12 conexiones</div>
-                          </div>
-                          <hr className="border-secondary" />
-                          
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-warning rounded-circle me-2" style={{ width: '8px', height: '8px' }}></div>
-                                <span className="small text-light">malicious-domain.com</span>
-                              </div>
-                              <Badge bg="warning" className="small">Bridge</Badge>
-                            </div>
-                            <div className="small text-muted">8 conexiones</div>
-                          </div>
-                          <hr className="border-secondary" />
-                          
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-success rounded-circle me-2" style={{ width: '8px', height: '8px' }}></div>
-                                <span className="small text-light">192.168.1.100</span>
-                              </div>
-                              <Badge bg="success" className="small">Target</Badge>
-                            </div>
-                            <div className="small text-muted">6 conexiones</div>
-                          </div>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : (
+                            <div className="text-muted small">Sin datos reales de centralidad</div>
+                          )}
                         </Card.Body>
                       </Card>
                       
-                      <Card className="bg-dark border-secondary">
-                        <Card.Header className="bg-dark border-secondary">
-                          <h6 className="mb-0 text-light">Tipos de Conexión</h6>
+                      <Card>
+                        <Card.Header>
+                          <h6 className="mb-0">Tipos de Conexión</h6>
                         </Card.Header>
                         <Card.Body>
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-danger" style={{ width: '12px', height: '2px' }}></div>
-                                <span className="small text-light ms-2">Maliciosa</span>
-                              </div>
-                              <span className="small text-muted">8</span>
+                          {statsLoading ? (
+                            <div className="text-center py-3">
+                              <Spinner animation="border" size="sm" variant="light" />
                             </div>
-                          </div>
-                          
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-warning" style={{ width: '12px', height: '2px' }}></div>
-                                <span className="small text-light ms-2">Sospechosa</span>
+                          ) : statsError ? (
+                            <Alert variant="danger" className="small mb-0">{statsError}</Alert>
+                          ) : relationshipTypeStats.length === 0 ? (
+                            <div className="text-muted small">Sin datos disponibles</div>
+                          ) : (
+                            relationshipTypeStats.slice(0, 5).map((item) => (
+                              <div className="mb-2" key={item.type}>
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <div className="d-flex align-items-center">
+                                    <div className="bg-info" style={{ width: '12px', height: '2px' }}></div>
+                                    <span className="small ms-2">{formatRelationshipType(item.type)}</span>
+                                  </div>
+                                  <span className="small text-muted">{item.count}</span>
+                                </div>
                               </div>
-                              <span className="small text-muted">6</span>
-                            </div>
-                          </div>
-                          
-                          <div className="mb-2">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <div className="d-flex align-items-center">
-                                <div className="bg-success" style={{ width: '12px', height: '2px' }}></div>
-                                <span className="small text-light ms-2">Legítima</span>
-                              </div>
-                              <span className="small text-muted">4</span>
-                            </div>
-                          </div>
+                            ))
+                          )}
                         </Card.Body>
                       </Card>
                     </Col>
@@ -1495,40 +1960,96 @@ const InvestigationWorkspace: React.FC = () => {
           </Col>
           
           {/* Panel lateral de información */}
-          <Col lg={3} className="border-start border-secondary p-3">
-            <Card className="bg-dark border-secondary mb-3">
-              <Card.Header className="bg-dark border-secondary">
-                <h6 className="mb-0 text-light">Información de la Investigación</h6>
+          <Col lg={3} className="p-3">
+            <Card className="mb-3">
+              <Card.Header>
+                <h6 className="mb-0">Información de la Investigación</h6>
               </Card.Header>
               <Card.Body>
                 <div className="small">
                   <div className="mb-2">
                     <strong className="text-muted">Estado:</strong>
-                    <Badge bg="success" className="ms-2">Activa</Badge>
+                    <Badge
+                      bg={(investigation?.status ?? 'active') === 'completed' ? 'secondary' : (investigation?.status ?? 'active') === 'paused' ? 'warning' : (investigation?.status ?? 'active') === 'archived' ? 'dark' : 'success'}
+                      className="ms-2"
+                    >
+                      {(investigation?.status ?? 'active') === 'completed' ? 'Completada' : (investigation?.status ?? 'active') === 'paused' ? 'Pausada' : (investigation?.status ?? 'active') === 'archived' ? 'Archivada' : 'Activa'}
+                    </Badge>
                   </div>
                   <div className="mb-2">
                     <strong className="text-muted">Prioridad:</strong>
-                    <Badge bg="danger" className="ms-2">Alta</Badge>
+                    <Badge
+                      bg={['high', 'critical'].includes(investigation?.priority ?? 'medium') ? 'danger' : (investigation?.priority ?? 'medium') === 'medium' ? 'warning' : 'success'}
+                      className="ms-2"
+                    >
+                      {['high', 'critical'].includes(investigation?.priority ?? 'medium') ? 'Alta' : (investigation?.priority ?? 'medium') === 'medium' ? 'Media' : 'Baja'}
+                    </Badge>
                   </div>
                   <div className="mb-2">
                     <strong className="text-muted">Creada:</strong>
-                    <span className="ms-2 text-light">{new Date(investigation.createdAt).toLocaleDateString()}</span>
+                    <span className="ms-2">{investigation?.createdAt ? new Date(investigation.createdAt).toLocaleDateString() : '-'}</span>
                   </div>
                   <div className="mb-2">
                     <strong className="text-muted">Actualizada:</strong>
-                    <span className="ms-2 text-light">{new Date(investigation.updatedAt).toLocaleDateString()}</span>
+                    <span className="ms-2">{investigation?.updatedAt ? new Date(investigation.updatedAt).toLocaleDateString() : '-'}</span>
                   </div>
                   <div className="mb-2">
                     <strong className="text-muted">Entidades:</strong>
-                    <span className="ms-2 text-light">{entities.length}</span>
+                    <span className="ms-2">{entities.length}</span>
                   </div>
                 </div>
               </Card.Body>
             </Card>
             
-            <Card className="bg-dark border-secondary">
-              <Card.Header className="bg-dark border-secondary">
-                <h6 className="mb-0 text-light">Acciones Rápidas</h6>
+            <Card className="mt-3">
+              <Card.Header>
+                <h6 className="mb-0">OSINT Táctico</h6>
+              </Card.Header>
+              <Card.Body>
+                <div className="d-grid gap-2">
+                  <OverlayTrigger
+                    placement="left"
+                    overlay={<Tooltip>Ejecuta Ping, Nmap, Wappalyzer, Whois y DNS automáticamente sobre el objetivo</Tooltip>}
+                  >
+                    <Button 
+                      variant="danger" 
+                      size="lg" 
+                      onClick={handleFullAutoRecon}
+                      disabled={autoReconLoading}
+                      className="d-flex align-items-center justify-content-center"
+                    >
+                      {autoReconLoading ? (
+                        <Spinner animation="border" size="sm" className="me-2" />
+                      ) : (
+                        <Zap size={18} className="me-2" />
+                      )}
+                      {autoReconLoading ? 'Escaneando...' : 'AUTO RECON (Full Stack)'}
+                    </Button>
+                  </OverlayTrigger>
+                  <div className="text-center text-muted small mt-1">
+                    Script Python Automatizado
+                  </div>
+                  <OverlayTrigger
+                    placement="left"
+                    overlay={<Tooltip>Abrir herramientas OSINT dockerizadas y búsquedas avanzadas</Tooltip>}
+                  >
+                    <Button
+                      variant="outline-danger"
+                      size="sm"
+                      onClick={handleOpenDockerTools}
+                      className="d-flex align-items-center justify-content-center"
+                    >
+                      <Search size={16} className="me-2" />
+                      Búsquedas Dockerizadas
+                    </Button>
+                  </OverlayTrigger>
+                </div>
+              </Card.Body>
+            </Card>
+            
+            <Card>
+              <Card.Header>
+                <h6 className="mb-0">Acciones Rápidas</h6>
               </Card.Header>
               <Card.Body>
                 <div className="d-grid gap-2">
@@ -1580,10 +2101,9 @@ const InvestigationWorkspace: React.FC = () => {
         show={showOSINTPanel} 
         onHide={() => setShowOSINTPanel(false)} 
         placement="end"
-        className="bg-dark text-light"
         style={{ width: '400px' }}
       >
-        <Offcanvas.Header closeButton className="border-bottom border-secondary">
+        <Offcanvas.Header closeButton className="border-bottom">
           <Offcanvas.Title>Herramientas OSINT</Offcanvas.Title>
         </Offcanvas.Header>
         <Offcanvas.Body>
@@ -1591,20 +2111,47 @@ const InvestigationWorkspace: React.FC = () => {
             <div>
               <h6 className="mb-3">Seleccionar Herramienta</h6>
               <div className="d-grid gap-2">
-                {osintTools.map((tool) => (
-                  <Card 
-                    key={tool.id} 
-                    className="bg-dark border-secondary cursor-pointer"
-                    onClick={() => setSelectedTool(tool)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <Card.Body className="p-3">
-                      <h6 className="text-light mb-1">{tool.name}</h6>
-                      <p className="small text-muted mb-1">{tool.description}</p>
-                      <Badge bg="secondary" className="small">{tool.category}</Badge>
-                    </Card.Body>
-                  </Card>
-                ))}
+                {toolsLoading ? (
+                  <div className="text-center py-4">
+                    <Spinner animation="border" variant="light" size="sm" />
+                    <p className="mt-2 small text-muted">Cargando herramientas OSINT...</p>
+                  </div>
+                ) : toolsError ? (
+                  <div className="text-center py-4 text-danger">
+                    <AlertCircle size={20} className="mb-2" />
+                    <p className="small mb-0">{toolsError}</p>
+                  </div>
+                ) : osintTools.length === 0 ? (
+                  <div className="text-center py-4 text-muted">
+                    <p className="small mb-0">No hay herramientas disponibles</p>
+                  </div>
+                ) : (
+                  osintTools.map((tool) => (
+                    <Card 
+                      key={tool.id} 
+                      className="cursor-pointer mb-2"
+                      onClick={() => {
+                        setSelectedTool(tool);
+                        setToolParameters(tool.defaultParameters || {});
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <Card.Body className="p-3">
+                        <h6 className="mb-1">{tool.name}</h6>
+                        <p className="small text-muted mb-1">{tool.description}</p>
+                        <div className="d-flex flex-wrap gap-2">
+                          <Badge bg="secondary" className="small">{tool.category}</Badge>
+                          <Badge bg="light" text="dark" className="small border">{tool.inputType}</Badge>
+                          {tool.requiresApiKey && (
+                            <Badge bg="warning" text="dark" className="small">
+                              API Key
+                            </Badge>
+                          )}
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  ))
+                )}
               </div>
             </div>
           ) : (
@@ -1614,13 +2161,32 @@ const InvestigationWorkspace: React.FC = () => {
                 <Button 
                   variant="outline-secondary" 
                   size="sm" 
-                  onClick={() => setSelectedTool(null)}
+                  onClick={() => {
+                    setSelectedTool(null);
+                    setToolParameters({});
+                  }}
                 >
                   <X size={14} />
                 </Button>
               </div>
               
               <p className="small text-muted mb-3">{selectedTool.description}</p>
+
+              <div className="d-flex flex-wrap gap-2 mb-3">
+                <Badge bg="secondary" className="small">{selectedTool.category}</Badge>
+                <Badge bg="dark" className="small border border-secondary">{selectedTool.inputType}</Badge>
+                {selectedTool.requiresApiKey && (
+                  <Badge bg="warning" text="dark" className="small">
+                    API Key
+                  </Badge>
+                )}
+              </div>
+
+              {selectedTool.requiresApiKey && (
+                <Alert variant="warning" className="small border border-warning">
+                  Requiere {selectedTool.apiKeyName ?? 'API key'} configurada en el backend.
+                </Alert>
+              )}
               
               <Form>
                 {selectedTool.parameters.map((param: any) => (
@@ -1639,7 +2205,6 @@ const InvestigationWorkspace: React.FC = () => {
                           ...prev,
                           [param.name]: e.target.value
                         }))}
-                        className="bg-dark border-secondary text-light"
                       />
                     )}
                     
@@ -1652,7 +2217,6 @@ const InvestigationWorkspace: React.FC = () => {
                           ...prev,
                           [param.name]: parseInt(e.target.value) || ''
                         }))}
-                        className="bg-dark border-secondary text-light"
                       />
                     )}
                     
@@ -1665,7 +2229,6 @@ const InvestigationWorkspace: React.FC = () => {
                           ...prev,
                           [param.name]: e.target.checked
                         }))}
-                        className="text-light"
                       />
                     )}
                     
@@ -1676,7 +2239,6 @@ const InvestigationWorkspace: React.FC = () => {
                           ...prev,
                           [param.name]: e.target.value
                         }))}
-                        className="bg-dark border-secondary text-light"
                       >
                         <option value="">Seleccionar...</option>
                         {param.options.map((option: string) => (
@@ -1721,27 +2283,203 @@ const InvestigationWorkspace: React.FC = () => {
         </Offcanvas.Body>
       </Offcanvas>
 
-      {/* Modal de confirmación de eliminación */}
-      <Modal 
-        show={!!showDeleteConfirm} 
-        onHide={() => setShowDeleteConfirm(null)}
-        className="text-light"
+      {/* Modal detalles de ejecución */}
+      <Modal
+        show={!!showExecutionDetails}
+        onHide={() => setShowExecutionDetails(null)}
+        size="lg"
       >
-        <Modal.Header closeButton className="bg-dark border-secondary">
-          <Modal.Title>Confirmar Eliminación</Modal.Title>
+        <Modal.Header closeButton>
+          <Modal.Title>Detalles de Ejecución</Modal.Title>
         </Modal.Header>
-        <Modal.Body className="bg-dark">
-          ¿Estás seguro de que deseas eliminar esta entidad? Esta acción no se puede deshacer.
+        <Modal.Body>
+          {executionDetailsLoading ? (
+            <div className="text-center py-4">
+              <Spinner animation="border" variant="primary" size="sm" />
+              <p className="mt-2 small text-muted mb-0">Cargando...</p>
+            </div>
+          ) : executionDetailsError ? (
+            <Alert variant="danger" className="small mb-0">
+              {executionDetailsError}
+            </Alert>
+          ) : !executionDetails ? (
+            <div className="small text-muted">Sin datos disponibles</div>
+          ) : (
+            <div>
+              <div className="d-flex flex-wrap gap-2 mb-3">
+                <Badge bg="secondary">{String(executionDetails.transform_name ?? '')}</Badge>
+                <Badge bg={getStatusVariant(String(executionDetails.status ?? 'pending') as ExecutionStatus)}>
+                  {String(executionDetails.status ?? '')}
+                </Badge>
+                {executionDetails.duration != null && (
+                  <Badge bg="info">{Number(executionDetails.duration).toFixed(1)}s</Badge>
+                )}
+              </div>
+              <pre className="small mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                {JSON.stringify(executionDetails, null, 2)}
+              </pre>
+            </div>
+          )}
         </Modal.Body>
-        <Modal.Footer className="bg-dark border-secondary">
-          <Button variant="secondary" onClick={() => setShowDeleteConfirm(null)}>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={() => setShowExecutionDetails(null)}>
+            Cerrar
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal de Auto Recon */}
+      <Modal show={showAutoReconModal} onHide={() => setShowAutoReconModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <Zap className="me-2" size={20} />
+            Auto Reconocimiento (Full Stack)
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p className="text-muted mb-3">
+            Este proceso ejecutará automáticamente una secuencia de herramientas OSINT sobre el objetivo:
+          </p>
+          <ListGroup className="mb-4 small">
+            <ListGroup.Item><Wifi size={14} className="me-2 text-success"/>Ping Check (Disponibilidad)</ListGroup.Item>
+            <ListGroup.Item><Globe size={14} className="me-2 text-primary"/>Búsqueda DNS (A, MX, NS, TXT)</ListGroup.Item>
+            <ListGroup.Item><FileText size={14} className="me-2 text-warning"/>Whois Lookup (Información de registro)</ListGroup.Item>
+            <ListGroup.Item><Zap size={14} className="me-2 text-info"/>Wappalyzer (Tecnologías Web)</ListGroup.Item>
+            <ListGroup.Item><Network size={14} className="me-2 text-danger"/>Nmap Scan (Puertos y Servicios)</ListGroup.Item>
+          </ListGroup>
+          
+          <Form.Group className="mb-3">
+            <Form.Label>Objetivo (URL, Dominio o IP)</Form.Label>
+            <InputGroup>
+              <InputGroup.Text><Target size={16} /></InputGroup.Text>
+              <Form.Control 
+                type="text" 
+                placeholder="ejemplo.com" 
+                value={autoReconTarget} 
+                onChange={(e) => setAutoReconTarget(e.target.value)}
+                autoFocus
+              />
+            </InputGroup>
+            <Form.Text className="text-muted">
+              Ingrese el dominio o URL raíz sin subdirectorios para mejores resultados.
+            </Form.Text>
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowAutoReconModal(false)}>
             Cancelar
           </Button>
           <Button 
             variant="danger" 
-            onClick={() => showDeleteConfirm && handleDeleteEntity(showDeleteConfirm)}
+            onClick={executeAutoRecon} 
+            disabled={!autoReconTarget}
           >
-            Eliminar
+            <Play size={16} className="me-2" />
+            Iniciar Escaneo
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal show={showDockerCatalogModal} onHide={() => setShowDockerCatalogModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <Search className="me-2" size={20} />
+            Búsquedas Dockerizadas
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form.Group className="mb-3">
+            <Form.Label>Objetivo para dorking/indexación</Form.Label>
+            <InputGroup>
+              <InputGroup.Text><Target size={16} /></InputGroup.Text>
+              <Form.Control
+                type="text"
+                placeholder="ejemplo.com"
+                value={dockerTarget}
+                onChange={(e) => setDockerTarget(e.target.value)}
+              />
+              <Button
+                variant="outline-secondary"
+                onClick={() => void loadDockerCatalog(dockerTarget)}
+              >
+                Actualizar
+              </Button>
+            </InputGroup>
+          </Form.Group>
+
+          {dockerCatalogLoading ? (
+            <div className="text-center py-4">
+              <Spinner animation="border" size="sm" />
+            </div>
+          ) : dockerCatalogError ? (
+            <Alert variant="danger">{dockerCatalogError}</Alert>
+          ) : (
+            <>
+              {(dockerCatalog?.indices?.length || 0) > 0 && (
+                <Card className="mb-3">
+                  <Card.Header>
+                    <h6 className="mb-0">Índices Google</h6>
+                  </Card.Header>
+                  <Card.Body className="p-0">
+                    <ListGroup variant="flush">
+                      {(dockerCatalog?.indices || []).map((item: any, idx: number) => (
+                        <ListGroup.Item key={`idx-${idx}`} className="d-flex justify-content-between">
+                          <span className="text-muted">{item.operator}</span>
+                          <span>{item.example}</span>
+                        </ListGroup.Item>
+                      ))}
+                    </ListGroup>
+                  </Card.Body>
+                </Card>
+              )}
+
+              <Card className="mb-3">
+                <Card.Header className="d-flex justify-content-between align-items-center">
+                    <h6 className="mb-0">Google Dorks ({dockerCatalog?.dorks?.length || 0})</h6>
+                    {selectedDorks.length > 0 && (
+                        <Badge bg="primary">{selectedDorks.length} seleccionados</Badge>
+                    )}
+                </Card.Header>
+                <Card.Body className="p-0" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <ListGroup variant="flush">
+                        {(dockerCatalog?.dorks || []).map((dork: any, idx: number) => {
+                            const query = dork.query.replace('{target}', dockerTarget || 'target');
+                            const isSelected = selectedDorks.includes(query);
+                            return (
+                                <ListGroup.Item 
+                                    key={`dork-${idx}`} 
+                                    action 
+                                    active={isSelected}
+                                    onClick={() => toggleDork(query)}
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    <div className="d-flex w-100 justify-content-between">
+                                        <h6 className="mb-1">{dork.name}</h6>
+                                        <small>{dork.category}</small>
+                                    </div>
+                                    <p className="mb-1 small font-monospace text-break">{query}</p>
+                                    <small>{dork.intent}</small>
+                                </ListGroup.Item>
+                            );
+                        })}
+                    </ListGroup>
+                </Card.Body>
+              </Card>
+
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowDockerCatalogModal(false)}>
+            Cerrar
+          </Button>
+          <Button 
+            variant="danger" 
+            onClick={handleExecuteDorks}
+            disabled={executingDorks || selectedDorks.length === 0}
+          >
+            {executingDorks ? <Spinner animation="border" size="sm" className="me-2" /> : <Play size={16} className="me-2" />}
+            Ejecutar Seleccionados
           </Button>
         </Modal.Footer>
       </Modal>
@@ -1750,12 +2488,12 @@ const InvestigationWorkspace: React.FC = () => {
       {showEntityForm && (
         <EntityForm
           entity={selectedEntity || undefined}
-          investigationId={investigation.id}
+          investigationId={id ?? ''}
           onSave={(entity) => {
             if (selectedEntity) {
               setEntities(prev => prev.map(e => e.id === entity.id ? entity : e));
             } else {
-              setEntities(prev => [...prev, { ...entity, id: Date.now().toString() }]);
+              setEntities(prev => [...prev, entity]);
             }
             setShowEntityForm(false);
             setSelectedEntity(null);
@@ -1769,6 +2507,7 @@ const InvestigationWorkspace: React.FC = () => {
       
       {/* Estilos CSS para la timeline */}
       <style>{timelineStyles}</style>
+      </div>
     </div>
   );
 };

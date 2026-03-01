@@ -1,0 +1,81 @@
+FROM golang:1.25-alpine AS go-tools
+
+RUN apk add --no-cache git
+
+RUN go install github.com/tomnomnom/assetfinder@latest
+RUN go install github.com/owasp-amass/amass/v4/...@latest
+RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+RUN go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+RUN go install github.com/tomnomnom/waybackurls@latest
+RUN go install github.com/OJ/gobuster/v3@latest
+RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
+RUN git clone --depth 1 https://github.com/sullo/nikto.git /tmp/nikto
+
+
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN if [ -f /etc/apt/sources.list ]; then sed -i 's|http://deb.debian.org/debian|https://deb.debian.org/debian|g' /etc/apt/sources.list; fi \
+  && if [ -f /etc/apt/sources.list.d/debian.sources ]; then sed -i 's|http://deb.debian.org/debian|https://deb.debian.org/debian|g' /etc/apt/sources.list.d/debian.sources; fi \
+  && if [ -f /etc/apt/sources.list ]; then sed -i 's|http://security.debian.org|https://security.debian.org|g' /etc/apt/sources.list; fi \
+  && if [ -f /etc/apt/sources.list.d/debian.sources ]; then sed -i 's|http://security.debian.org|https://security.debian.org|g' /etc/apt/sources.list.d/debian.sources; fi
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    g++ \
+    git \
+    dirb \
+    make \
+    iputils-ping \
+    libimage-exiftool-perl \
+    masscan \
+    dmitry \
+    nmap \
+    perl \
+    libio-socket-ssl-perl \
+    libnet-ssleay-perl \
+    traceroute \
+    whatweb \
+    zmap \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/base.txt requirements/base.txt
+RUN pip install --no-cache-dir -r requirements/base.txt \
+  && pip install --no-cache-dir holehe shodan theHarvester sherlock-project dnstwist[full] python-Wappalyzer
+
+RUN git clone --depth 1 https://github.com/smicallef/spiderfoot.git /opt/spiderfoot \
+  && cd /opt/spiderfoot \
+  && pip install --no-cache-dir -r requirements.txt \
+  && chmod +x sf.py \
+  && ln -s /opt/spiderfoot/sf.py /usr/local/bin/spiderfoot
+
+RUN git clone --depth 1 https://github.com/lanmaster53/recon-ng.git /opt/recon-ng \
+  && cd /opt/recon-ng \
+  && pip install --no-cache-dir -r REQUIREMENTS \
+  && chmod +x recon-ng \
+  && ln -s /opt/recon-ng/recon-ng /usr/local/bin/recon-ng
+
+COPY --from=go-tools /go/bin/assetfinder /usr/local/bin/assetfinder
+COPY --from=go-tools /go/bin/amass /usr/local/bin/amass
+COPY --from=go-tools /go/bin/subfinder /usr/local/bin/subfinder
+COPY --from=go-tools /go/bin/httpx /usr/local/bin/httpx
+COPY --from=go-tools /go/bin/waybackurls /usr/local/bin/waybackurls
+COPY --from=go-tools /go/bin/gobuster /usr/local/bin/gobuster
+COPY --from=go-tools /go/bin/nuclei /usr/local/bin/nuclei
+COPY --from=go-tools /tmp/nikto /opt/nikto
+
+RUN ln -s /opt/nikto/program/nikto.pl /usr/local/bin/nikto
+
+RUN nuclei -update-templates || echo "Nuclei templates update failed, continuing..."
+
+COPY . .
+
+RUN mkdir -p /var/log/osint_platform
+
+CMD ["celery", "-A", "osint_platform.celery_app:app", "worker", "-l", "info", "-Q", "transforms,maintenance,monitoring"]

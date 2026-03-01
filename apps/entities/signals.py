@@ -261,9 +261,76 @@ def _create_ip_relationships(ip_entity: Entity, investigation):
         ip_entity: IP entity
         investigation: Investigation instance
     """
-    # Look for domains that might resolve to this IP
-    # This would typically be handled by DNS resolution transforms
-    pass
+    ip_value = ip_entity.value
+
+    domain_entities = Entity.objects.filter(
+        investigation=investigation, entity_type="domain"
+    )
+
+    for domain_entity in domain_entities:
+        props = domain_entity.properties or {}
+        candidate_ips = []
+        for key in (
+            "ip",
+            "ips",
+            "ip_addresses",
+            "addresses",
+            "resolved_ips",
+            "a_records",
+        ):
+            value = props.get(key)
+            if isinstance(value, list):
+                candidate_ips.extend([str(v).strip() for v in value if v])
+            elif isinstance(value, str):
+                candidate_ips.extend([v.strip() for v in re.split(r"[,\s]+", value) if v])
+
+        if ip_value in candidate_ips:
+            Relationship.objects.get_or_create(
+                investigation=investigation,
+                source_entity=domain_entity,
+                target_entity=ip_entity,
+                relationship_type="resolves_to",
+                defaults={"source": "auto_detection", "confidence_score": 0.85},
+            )
+            Relationship.objects.get_or_create(
+                investigation=investigation,
+                source_entity=ip_entity,
+                target_entity=domain_entity,
+                relationship_type="hosted_on",
+                defaults={"source": "auto_detection", "confidence_score": 0.7},
+            )
+            logger.info(
+                f"Auto-created IP relationships: {domain_entity.value} -> {ip_value}"
+            )
+
+    ip_props = ip_entity.properties or {}
+    hostnames = []
+    for key in ("hostname", "hostnames", "domain", "domains", "rdns"):
+        value = ip_props.get(key)
+        if isinstance(value, list):
+            hostnames.extend([str(v).strip() for v in value if v])
+        elif isinstance(value, str):
+            hostnames.extend([v.strip() for v in re.split(r"[,\s]+", value) if v])
+
+    if hostnames:
+        hostname_entities = Entity.objects.filter(
+            investigation=investigation, entity_type="domain", value__in=hostnames
+        )
+        for hostname_entity in hostname_entities:
+            Relationship.objects.get_or_create(
+                investigation=investigation,
+                source_entity=hostname_entity,
+                target_entity=ip_entity,
+                relationship_type="resolves_to",
+                defaults={"source": "auto_detection", "confidence_score": 0.85},
+            )
+            Relationship.objects.get_or_create(
+                investigation=investigation,
+                source_entity=ip_entity,
+                target_entity=hostname_entity,
+                relationship_type="hosted_on",
+                defaults={"source": "auto_detection", "confidence_score": 0.7},
+            )
 
 
 def _create_email_relationships(email_entity: Entity, investigation):

@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Form, Button, Badge, ButtonGroup, InputGroup, Modal, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import cytoscape from 'cytoscape';
 import coseBilkent from 'cytoscape-cose-bilkent';
+import Swal from 'sweetalert2';
+import { useLocation } from 'react-router-dom';
 import type { Investigation, User } from '../types';
 import apiService from '../services/api';
-import Header from '../components/Header';
+import Header from '../shared/components/Header';
 
 // Registrar extensiones de Cytoscape
 cytoscape.use(coseBilkent);
@@ -75,6 +77,8 @@ interface GraphsPageProps {
 }
 
 const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
+  const location = useLocation();
+
   // Estados para filtros y controles
   const [nodeTypeFilter, setNodeTypeFilter] = useState<string>('all');
   const [edgeTypeFilter, setEdgeTypeFilter] = useState<string>('all');
@@ -93,6 +97,8 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
   const [selectedInvestigationId, setSelectedInvestigationId] = useState<string>('');
   const [graphLoading, setGraphLoading] = useState<boolean>(false);
   const [graphError, setGraphError] = useState<string | null>(null);
+  const [limit, setLimit] = useState<number>(500); // Default limit
+  const [totalNodesAvailable, setTotalNodesAvailable] = useState<number>(0);
 
 
   const [detailedReport, setDetailedReport] = useState<string>('');
@@ -119,7 +125,7 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
   useEffect(() => {
     if (!selectedInvestigationId) return;
     void loadGraphData(selectedInvestigationId);
-  }, [selectedInvestigationId]);
+  }, [selectedInvestigationId, limit]);
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -162,7 +168,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       const list = normalizeInvestigationsPayload(res.data);
       setInvestigations(list);
 
-      const preferred = list.find((i) => i.status === 'active') || list[0];
+      const requested = new URLSearchParams(location.search).get('investigationId')?.trim() || '';
+      const preferred =
+        (requested && list.find((i) => i.id === requested)) || list.find((i) => i.status === 'active') || list[0];
       setSelectedInvestigationId(preferred?.id || '');
     } catch (err) {
       setGraphError(err instanceof Error ? err.message : 'No se pudieron cargar las investigaciones');
@@ -193,7 +201,7 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
     if (t === 'social') return 'social_media';
     if (t === 'crypto') return 'cryptocurrency';
     if (t === 'subdomain') return 'subdomain';
-    if (t === 'person' || t === 'organization' || t === 'ip' || t === 'domain' || t === 'email' || t === 'phone' || t === 'url' || t === 'hash' || t === 'file' || t === 'cryptocurrency' || t === 'social_media' || t === 'geolocation' || t === 'other') {
+    if (t === 'person' || t === 'organization' || t === 'ip' || t === 'domain' || t === 'email' || t === 'phone' || t === 'url' || t === 'port' || t === 'service' || t === 'hash' || t === 'file' || t === 'cryptocurrency' || t === 'social_media' || t === 'geolocation' || t === 'other') {
       return t as Node['type'];
     }
     return 'other';
@@ -203,7 +211,7 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
     setGraphLoading(true);
     setGraphError(null);
     try {
-      const res = await apiService.getInvestigationGraph(investigationId);
+      const res = await apiService.getInvestigationGraph(investigationId, limit);
       if (!res.success || !res.data) {
         setGraphError(res.message || 'No se pudo cargar el grafo');
         setNodes([]);
@@ -217,6 +225,12 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       const graph: any = res.data;
       const rawNodes: any[] = Array.isArray(graph?.nodes) ? graph.nodes : [];
       const rawEdges: any[] = Array.isArray(graph?.edges) ? graph.edges : [];
+
+      if (graph?.stats?.total_nodes_available) {
+          setTotalNodesAvailable(graph.stats.total_nodes_available);
+      } else {
+          setTotalNodesAvailable(rawNodes.length);
+      }
 
       const mappedEdges: Edge[] = rawEdges.map((e) => {
         const id = String(e.id ?? `${e.source ?? ''}-${e.target ?? ''}-${e.type ?? ''}`);
@@ -655,7 +669,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       organization: '#2ECC71', // Verde militar
       ip: '#F39C12',          // Naranja técnico
       domain: '#9B59B6',      // Púrpura cyber
-      email: '#E74C3C'        // Rojo alerta
+      email: '#E74C3C',       // Rojo alerta
+      port: '#16A085',        // Verde azulado
+      service: '#D35400'      // Naranja oscuro
     };
     return colors[type] || '#7F8C8D';
   };
@@ -667,7 +683,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       organization: '#27AE60', // Verde más oscuro
       ip: '#E67E22',          // Naranja más oscuro
       domain: '#8E44AD',      // Púrpura más oscuro
-      email: '#C0392B'        // Rojo más oscuro
+      email: '#C0392B',       // Rojo más oscuro
+      port: '#138D75',
+      service: '#BA4A00'
     };
     return colors[type] || '#6C7B7F';
   };
@@ -679,7 +697,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       organization: '#58D68D', // Verde claro
       ip: '#F8C471',          // Naranja claro
       domain: '#BB8FCE',      // Púrpura claro
-      email: '#F1948A'        // Rojo claro
+      email: '#F1948A',       // Rojo claro
+      port: '#48C9B0',
+      service: '#F0B27A'
     };
     return colors[type] || '#95A5A6';
   };
@@ -691,7 +711,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       organization: '#2ECC71',
       ip: '#F39C12',
       domain: '#9B59B6',
-      email: '#E74C3C'
+      email: '#E74C3C',
+      port: '#16A085',
+      service: '#D35400'
     };
     return colors[type] || '#7F8C8D';
   };
@@ -703,7 +725,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       organization: '#58D68D',
       ip: '#F8C471',
       domain: '#BB8FCE',
-      email: '#F1948A'
+      email: '#F1948A',
+      port: '#7DCEA0',
+      service: '#F5CBA7'
     };
     return colors[type] || '#95A5A6';
   };
@@ -715,7 +739,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       organization: '#198754',
       ip: '#ffc107',
       domain: '#0dcaf0',
-      email: '#dc3545'
+      email: '#dc3545',
+      port: '#20c997',
+      service: '#fd7e14'
     };
     return colors[type] || '#6c757d';
   };
@@ -727,7 +753,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       organization: 'Organización',
       ip: 'Dirección IP',
       domain: 'Dominio',
-      email: 'Email'
+      email: 'Email',
+      port: 'Puerto',
+      service: 'Servicio'
     };
     return types[type] || type;
   };
@@ -750,7 +778,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       ip: '◆',        // Diamante para IP
       domain: '▲',     // Triángulo para dominio
       email: '✉',      // Sobre para email
-      phone: '☎'       // Teléfono para phone
+      phone: '☎',      // Teléfono para phone
+      port: '◐',
+      service: '▣'
     };
     return icons[type as keyof typeof icons] || '○';
   };
@@ -997,7 +1027,12 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
       setShowReportModal(true);
       console.log('✅ Análisis de caminos completado:', criticalPaths);
     } else {
-      alert('Se necesitan al menos 2 nodos para calcular caminos');
+      Swal.fire({
+        title: 'Nodos insuficientes',
+        text: 'Se necesitan al menos 2 nodos para calcular caminos.',
+        icon: 'warning',
+        confirmButtonText: 'Entendido'
+      });
     }
   };
 
@@ -1682,15 +1717,8 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
   const graphCanvasStyle: React.CSSProperties = {
     width: '100%',
     height: '100%',
-    backgroundColor: '#060B14',
-    backgroundImage: [
-      'radial-gradient(circle at 20% 25%, rgba(0, 212, 255, 0.14), transparent 45%)',
-      'radial-gradient(circle at 78% 70%, rgba(155, 89, 182, 0.10), transparent 52%)',
-      'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)',
-      'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)'
-    ].join(', '),
-    backgroundSize: '100% 100%, 100% 100%, 26px 26px, 48px 48px',
-    backgroundPosition: 'center, center, 0 0, 12px 16px'
+    backgroundColor: 'transparent',
+    // Removed custom background to inherit tactical-card style
   };
 
 
@@ -1702,19 +1730,18 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
         <Row className="mb-4">
           <Col>
             <div className="d-flex justify-content-between align-items-center">
-              <h4 className="text-light mb-0">
-                <i className="bi bi-diagram-3 me-2"></i>
-                Análisis de Grafos OSINT
-              </h4>
+              <h4 className="mb-0">
+            <i className="bi bi-diagram-3 me-2"></i>
+            Análisis de Grafos OSINT
+          </h4>
               <div className="d-flex gap-2">
                 <InputGroup style={{ width: '250px' }}>
                   <Form.Control
-                    type="text"
-                    placeholder="Buscar nodos..."
-                    value={searchTerm}
-                    onChange={(e) => handleSearch(e.target.value)}
-                    className="bg-dark border-secondary text-light"
-                  />
+              type="text"
+              placeholder="Buscar nodos..."
+              value={searchTerm}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
                   <Button variant="outline-secondary">
                     <i className="bi bi-search"></i>
                   </Button>
@@ -1793,9 +1820,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
         {/* Controles de Filtrado */}
         <Row className="mb-4">
           <Col>
-            <Card bg="dark" border="secondary">
-              <Card.Header className="bg-secondary d-flex justify-content-between align-items-center">
-                  <h6 className="mb-0 text-light">
+            <Card className="tactical-card">
+              <Card.Header className="d-flex justify-content-between align-items-center">
+                  <h6 className="mb-0">
                     <i className="bi bi-funnel me-2"></i>
                     Filtros y Controles de Visualización
                   </h6>
@@ -1810,13 +1837,12 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
                 </Card.Header>
               <Card.Body>
                 <Row className="g-3 mb-3">
-                  <Col md={6}>
-                    <Form.Label className="text-light">Investigación</Form.Label>
+                  <Col md={4}>
+                    <Form.Label>Investigación</Form.Label>
                     <InputGroup>
                       <Form.Select
                         value={selectedInvestigationId}
                         onChange={(e) => setSelectedInvestigationId(e.target.value)}
-                        className="bg-dark border-secondary text-light"
                         disabled={graphLoading || investigations.length === 0}
                       >
                         <option value="">{investigations.length === 0 ? 'Sin investigaciones' : 'Seleccionar...'}</option>
@@ -1835,12 +1861,31 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
                       </Button>
                     </InputGroup>
                   </Col>
+                  <Col md={2}>
+                    <Form.Label>
+                      Límite Nodos
+                      {totalNodesAvailable > 0 && (
+                        <span className="text-muted ms-2" style={{ fontSize: '0.8em' }}>
+                          ({nodes.length}/{totalNodesAvailable})
+                        </span>
+                      )}
+                    </Form.Label>
+                    <Form.Select
+                      value={limit}
+                      onChange={(e) => setLimit(Number(e.target.value))}
+                    >
+                      <option value="100">100 (Rápido)</option>
+                      <option value="500">500 (Balanceado)</option>
+                      <option value="1000">1000 (Detallado)</option>
+                      <option value="2000">2000 (Denso)</option>
+                      <option value="0">Todos (Lento)</option>
+                    </Form.Select>
+                  </Col>
                   <Col md={3}>
-                    <Form.Label className="text-light">Tipo de Nodo</Form.Label>
+                    <Form.Label>Tipo de Nodo</Form.Label>
                     <Form.Select
                       value={nodeTypeFilter}
                       onChange={(e) => setNodeTypeFilter(e.target.value)}
-                      className="bg-dark border-secondary text-light"
                     >
                       <option value="all">Todos ({nodes.length})</option>
                       {Array.from(new Set(nodes.map((n) => n.type))).sort().map((t) => (
@@ -1851,11 +1896,10 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
                     </Form.Select>
                   </Col>
                   <Col md={3}>
-                    <Form.Label className="text-light">Tipo de Conexión</Form.Label>
+                    <Form.Label>Tipo de Conexión</Form.Label>
                     <Form.Select
                       value={edgeTypeFilter}
                       onChange={(e) => setEdgeTypeFilter(e.target.value)}
-                      className="bg-dark border-secondary text-light"
                     >
                       <option value="all">Todas ({edges.length})</option>
                       {Array.from(new Set(edges.map((e) => e.type))).sort().map((t) => (
@@ -1869,12 +1913,11 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
 
                 <Row className="g-3">
                   <Col md={2}>
-                    <Form.Label className="text-light">Layout</Form.Label>
+                    <Form.Label>Layout</Form.Label>
                     <Form.Select
-                      value={layoutType}
-                      onChange={(e) => changeLayout(e.target.value)}
-                      className="bg-dark border-secondary text-light"
-                    >
+            value={layoutType}
+            onChange={(e) => changeLayout(e.target.value)}
+          >
                       <option value="cose-bilkent">Cose-Bilkent</option>
                       <option value="circle">Circular</option>
                       <option value="grid">Cuadrícula</option>
@@ -1942,9 +1985,9 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
         <Row className="mb-4">
           <Col lg={effectiveShowSidePanel ? 8 : 12}>
             <div ref={graphContainerRef} style={{ height: isFullscreen ? '100vh' : '600px' }}>
-              <Card bg="dark" border="secondary" style={{ height: '100%' }}>
-                <Card.Header className="bg-secondary d-flex justify-content-between align-items-center">
-                  <h6 className="mb-0 text-light">
+              <Card className="tactical-card" style={{ height: '100%' }}>
+                <Card.Header className="d-flex justify-content-between align-items-center">
+                  <h6 className="mb-0">
                     <i className="bi bi-diagram-2 me-2"></i>
                     Visualización del Grafo - Layout: {layoutType.charAt(0).toUpperCase() + layoutType.slice(1)}
                   </h6>
@@ -2011,8 +2054,8 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
           {/* Panel Lateral */}
           {effectiveShowSidePanel && (
             <Col lg={4}>
-              <Card bg="dark" border="secondary" style={{ height: '600px' }}>
-                <Card.Header className="bg-secondary d-flex justify-content-between align-items-center">
+              <Card className="tactical-card" style={{ height: '600px' }}>
+                <Card.Header className="d-flex justify-content-between align-items-center">
                   <h6 className="mb-0 text-light">
                     <i className="bi bi-info-circle me-2"></i>
                     Detalles del Elemento
@@ -2182,6 +2225,47 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
                           </>
                         )}
                       </div>
+                    </div>
+                    
+                    <hr className="border-secondary" />
+
+                    <div className="mb-3">
+                      <h6 className="text-light mb-2">Datos OSINT</h6>
+                      {(selectedNode.properties?.technologies?.length || selectedNode.properties?.open_ports?.length) && (
+                        <div className="text-muted small mb-2">
+                          {Array.isArray(selectedNode.properties?.technologies) && (
+                            <div className="mb-2">
+                              <div className="d-flex justify-content-between mb-1">
+                                <span>Tecnologías:</span>
+                                <span className="text-light">{selectedNode.properties.technologies.length}</span>
+                              </div>
+                              <div className="d-flex flex-wrap gap-1">
+                                {selectedNode.properties.technologies.map((tech: string) => (
+                                  <Badge bg="info" key={tech}>{tech}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {Array.isArray(selectedNode.properties?.open_ports) && (
+                            <div className="mb-2">
+                              <div className="d-flex justify-content-between mb-1">
+                                <span>Puertos:</span>
+                                <span className="text-light">{selectedNode.properties.open_ports.length}</span>
+                              </div>
+                              <div className="d-flex flex-wrap gap-1">
+                                {selectedNode.properties.open_ports.map((port: any) => (
+                                  <Badge bg="secondary" key={`${port.port}-${(port.services || []).join('-')}`}>
+                                    {port.port}{port.services?.length ? `/${port.services.join(',')}` : ''}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <pre className="small mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                        {JSON.stringify(selectedNode.properties ?? {}, null, 2)}
+                      </pre>
                     </div>
                     
                     <hr className="border-secondary" />
@@ -2396,7 +2480,7 @@ const GraphsPage: React.FC<GraphsPageProps> = ({ user, onLogout }) => {
         </Row>
 
         {/* Herramientas de Análisis */}
-        <Card bg="dark" border="secondary">
+        <Card>
           <Card.Header className="bg-secondary">
             <h6 className="mb-0 text-light">
               <i className="bi bi-tools me-2"></i>

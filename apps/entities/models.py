@@ -17,6 +17,8 @@ class Entity(models.Model):
         ("organization", "Organization"),
         ("phone", "Phone Number"),
         ("url", "URL"),
+        ("port", "Port"),
+        ("service", "Service"),
         ("hash", "Hash"),
         ("file", "File"),
         ("cryptocurrency", "Cryptocurrency Address"),

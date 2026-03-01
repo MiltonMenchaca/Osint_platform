@@ -16,19 +16,19 @@ urlpatterns = [
         name="transform-list-create",
     ),
     path(
-        "transforms/<int:pk>/",
+        "transforms/<uuid:pk>/",
         views.TransformDetailView.as_view(),
         name="transform-detail",
     ),
     path("transforms/stats/", views.transform_stats, name="transform-stats"),
-    path("transforms/<int:pk>/test/", views.test_transform, name="test-transform"),
+    path("transforms/<uuid:pk>/test/", views.test_transform, name="test-transform"),
     path(
-        "transforms/<int:pk>/validate/",
+        "transforms/<uuid:pk>/validate/",
         views.validate_transform,
         name="validate-transform",
     ),
     path(
-        "transforms/<int:pk>/usage-stats/",
+        "transforms/<uuid:pk>/usage-stats/",
         views.transform_usage_stats,
         name="transform-usage-stats",
     ),

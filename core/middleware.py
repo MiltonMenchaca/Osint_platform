@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import shutil
 import time
 import uuid
 from typing import Dict, Optional
@@ -352,6 +354,32 @@ class HealthCheckMiddleware(MiddlewareMixin):
             except Exception as e:
                 health_data["cache"] = f"error: {str(e)}"
                 health_data["status"] = "unhealthy"
+
+            base_dir = getattr(settings, "BASE_DIR", os.getcwd())
+            try:
+                usage = shutil.disk_usage(str(base_dir))
+                total = float(usage.total) if usage.total else 0.0
+                used = float(usage.used) if usage.used else 0.0
+                disk_percent = (used / total) * 100 if total else 0.0
+                health_data["storage"] = {
+                    "total_bytes": int(usage.total),
+                    "used_bytes": int(usage.used),
+                    "free_bytes": int(usage.free),
+                    "used_percent": round(disk_percent, 2),
+                    "path": str(base_dir),
+                }
+            except Exception as e:
+                health_data["storage"] = {"error": str(e), "path": str(base_dir)}
+
+            try:
+                import psutil  # type: ignore
+
+                health_data["system"] = {
+                    "cpu_percent": round(float(psutil.cpu_percent(interval=0.0)), 2),
+                    "memory_percent": round(float(psutil.virtual_memory().percent), 2),
+                }
+            except Exception:
+                health_data["system"] = {"cpu_percent": None, "memory_percent": None}
 
             status_code = 200 if health_data["status"] == "healthy" else 503
             return JsonResponse(health_data, status=status_code)

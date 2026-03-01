@@ -1,9 +1,22 @@
-import json
 import logging
 from datetime import timedelta
 
 from django.core.cache import cache
-from django.db.models import Avg, Count, Max, Min, Q
+from django.db.models import (
+    Avg,
+    Count,
+    DateTimeField,
+    DurationField,
+    ExpressionWrapper,
+    F,
+    IntegerField,
+    Max,
+    Min,
+    OuterRef,
+    Q,
+    Subquery,
+)
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -50,7 +63,25 @@ class TransformListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         """Filter transforms with search and filtering"""
-        queryset = Transform.objects.all()
+        execution_count_subquery = (
+            TransformExecution.objects.filter(transform_name=OuterRef("name"))
+            .values("transform_name")
+            .annotate(c=Count("id"))
+            .values("c")
+        )
+        last_used_subquery = (
+            TransformExecution.objects.filter(transform_name=OuterRef("name"))
+            .values("transform_name")
+            .annotate(m=Max("created_at"))
+            .values("m")
+        )
+
+        queryset = Transform.objects.all().annotate(
+            usage_count=Coalesce(
+                Subquery(execution_count_subquery, output_field=IntegerField()), 0
+            ),
+            last_used=Subquery(last_used_subquery, output_field=DateTimeField()),
+        )
 
         # Search functionality
         search = self.request.query_params.get("search")
@@ -59,7 +90,8 @@ class TransformListCreateView(generics.ListCreateAPIView):
                 Q(name__icontains=search)
                 | Q(description__icontains=search)
                 | Q(category__icontains=search)
-                | Q(author__icontains=search)
+                | Q(tool_name__icontains=search)
+                | Q(display_name__icontains=search)
             )
 
         # Filter by category
@@ -77,26 +109,28 @@ class TransformListCreateView(generics.ListCreateAPIView):
         available = self.request.query_params.get("available")
         if available is not None:
             is_available = available.lower() in ["true", "1", "yes"]
-            queryset = queryset.filter(is_available=is_available)
+            candidate_transforms = list(queryset)
+            available_ids = [
+                transform.id
+                for transform in candidate_transforms
+                if transform.check_availability()[0] == is_available
+            ]
+            queryset = queryset.filter(id__in=available_ids)
 
         # Filter by input entity types
         input_types = self.request.query_params.get("input_types")
         if input_types:
             input_type_list = [t.strip() for t in input_types.split(",")]
-            for input_type in input_type_list:
-                queryset = queryset.filter(input_entity_types__contains=[input_type])
+            queryset = queryset.filter(
+                Q(input_type__in=input_type_list) | Q(input_type="any")
+            )
 
         # Filter by output entity types
         output_types = self.request.query_params.get("output_types")
         if output_types:
             output_type_list = [t.strip() for t in output_types.split(",")]
             for output_type in output_type_list:
-                queryset = queryset.filter(output_entity_types__contains=[output_type])
-
-        # Filter by author
-        author = self.request.query_params.get("author")
-        if author:
-            queryset = queryset.filter(author__icontains=author)
+                queryset = queryset.filter(output_types__contains=[output_type])
 
         # Filter by timeout range
         min_timeout = self.request.query_params.get("min_timeout")
@@ -105,14 +139,14 @@ class TransformListCreateView(generics.ListCreateAPIView):
         if min_timeout:
             try:
                 min_time = int(min_timeout)
-                queryset = queryset.filter(timeout_seconds__gte=min_time)
+                queryset = queryset.filter(timeout__gte=min_time)
             except ValueError:
                 pass
 
         if max_timeout:
             try:
                 max_time = int(max_timeout)
-                queryset = queryset.filter(timeout_seconds__lte=max_time)
+                queryset = queryset.filter(timeout__lte=max_time)
             except ValueError:
                 pass
 
@@ -145,16 +179,18 @@ class TransformListCreateView(generics.ListCreateAPIView):
             "-name",
             "category",
             "-category",
-            "author",
-            "-author",
-            "timeout_seconds",
-            "-timeout_seconds",
+            "tool_name",
+            "-tool_name",
+            "timeout",
+            "-timeout",
             "created_at",
             "-created_at",
             "updated_at",
             "-updated_at",
             "usage_count",
             "-usage_count",
+            "last_used",
+            "-last_used",
         ]
 
         if ordering in valid_orderings:
@@ -228,22 +264,29 @@ def transform_stats(request):
     transforms = Transform.objects.all()
     executions = TransformExecution.objects.all()
 
+    enabled_transforms = list(transforms.filter(is_enabled=True))
+    available_count = 0
+    for t in enabled_transforms:
+        is_available, _ = t.check_availability()
+        if is_available:
+            available_count += 1
+
     stats = {
         "transforms": {
             "total": transforms.count(),
             "enabled": transforms.filter(is_enabled=True).count(),
             "disabled": transforms.filter(is_enabled=False).count(),
-            "available": transforms.filter(is_available=True).count(),
-            "unavailable": transforms.filter(is_available=False).count(),
+            "available": available_count,
+            "unavailable": max(len(enabled_transforms) - available_count, 0),
             "by_category": dict(
                 transforms.values("category")
                 .annotate(count=Count("id"))
                 .values_list("category", "count")
             ),
             "timeout_stats": transforms.aggregate(
-                avg_timeout=Avg("timeout_seconds"),
-                max_timeout=Max("timeout_seconds"),
-                min_timeout=Min("timeout_seconds"),
+                avg_timeout=Avg("timeout"),
+                max_timeout=Max("timeout"),
+                min_timeout=Min("timeout"),
             ),
             "recent": transforms.filter(
                 created_at__gte=timezone.now() - timedelta(days=7)
@@ -263,48 +306,78 @@ def transform_stats(request):
             "recent": executions.filter(
                 created_at__gte=timezone.now() - timedelta(days=7)
             ).count(),
-            "avg_duration": executions.filter(
-                status="completed", ended_at__isnull=False
-            )
-            .extra(select={"duration": "EXTRACT(EPOCH FROM (ended_at - started_at))"})
-            .aggregate(avg_duration=Avg("duration"))["avg_duration"]
-            or 0,
+            "avg_duration": 0,
         },
         "usage": {
-            "most_used_transforms": list(
-                transforms.annotate(execution_count=Count("transformexecution"))
-                .order_by("-execution_count")[:10]
-                .values("id", "name", "category", "execution_count")
-            ),
-            "success_rates": list(
-                transforms.annotate(
-                    total_executions=Count("transformexecution"),
-                    successful_executions=Count(
-                        "transformexecution",
-                        filter=Q(transformexecution__status="completed"),
-                    ),
-                )
-                .filter(total_executions__gt=0)
-                .extra(
-                    select={
-                        "success_rate": (
-                            "CASE WHEN total_executions > 0 THEN "
-                            "(successful_executions::float / total_executions::float) * 100 "
-                            "ELSE 0 END"
-                        )
-                    }
-                )
-                .order_by("-success_rate")[:10]
-                .values(
-                    "id",
-                    "name",
-                    "total_executions",
-                    "successful_executions",
-                    "success_rate",
-                )
-            ),
+            "most_used_transforms": [],
+            "success_rates": [],
         },
     }
+
+    duration_expr = ExpressionWrapper(
+        F("completed_at") - F("started_at"), output_field=DurationField()
+    )
+    avg_duration = (
+        executions.filter(
+            status="completed",
+            started_at__isnull=False,
+            completed_at__isnull=False,
+        )
+        .aggregate(avg=Avg(duration_expr))
+        .get("avg")
+    )
+    stats["executions"]["avg_duration"] = (
+        avg_duration.total_seconds() if avg_duration else 0
+    )
+
+    total_exec_subquery = (
+        TransformExecution.objects.filter(transform_name=OuterRef("name"))
+        .values("transform_name")
+        .annotate(c=Count("id"))
+        .values("c")
+    )
+    success_exec_subquery = (
+        TransformExecution.objects.filter(
+            transform_name=OuterRef("name"), status="completed"
+        )
+        .values("transform_name")
+        .annotate(c=Count("id"))
+        .values("c")
+    )
+
+    transforms_with_usage = transforms.annotate(
+        execution_count=Coalesce(
+            Subquery(total_exec_subquery, output_field=IntegerField()), 0
+        ),
+        successful_executions=Coalesce(
+            Subquery(success_exec_subquery, output_field=IntegerField()), 0
+        ),
+    )
+
+    stats["usage"]["most_used_transforms"] = list(
+        transforms_with_usage.order_by("-execution_count")[:10].values(
+            "id", "name", "category", "execution_count"
+        )
+    )
+
+    success_rates = []
+    for t in transforms_with_usage:
+        total = int(getattr(t, "execution_count", 0) or 0)
+        if total <= 0:
+            continue
+        successful = int(getattr(t, "successful_executions", 0) or 0)
+        success_rates.append(
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "total_executions": total,
+                "successful_executions": successful,
+                "success_rate": (successful / total) * 100,
+            }
+        )
+
+    success_rates.sort(key=lambda x: x["success_rate"], reverse=True)
+    stats["usage"]["success_rates"] = success_rates[:10]
 
     # Cache for 5 minutes
     cache.set(cache_key, stats, 300)
@@ -323,87 +396,74 @@ def test_transform(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     test_input = serializer.validated_data["test_input"]
+    execute = serializer.validated_data.get("execute", False)
 
-    # Validate input against transform's input schema
-    if transform.input_schema:
-        try:
-            import jsonschema
+    if isinstance(test_input, str):
+        target_value = test_input
+    else:
+        target_value = (
+            test_input.get("target")
+            or test_input.get("input")
+            or test_input.get("input_value")
+            or test_input.get("value")
+            or ""
+        )
+        target_value = str(target_value).strip()
 
-            jsonschema.validate(test_input, transform.input_schema)
-        except jsonschema.ValidationError as e:
-            return Response(
-                {"error": "Input validation failed", "details": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        except Exception as e:
-            return Response(
-                {"error": "Schema validation error", "details": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-    # Check if transform is available
-    if not transform.is_available:
+    if not target_value:
         return Response(
-            {
-                "error": "Transform is not available",
-                "details": "Transform dependencies may not be installed",
-            },
+            {"error": "Invalid test_input", "details": "Missing target/input value"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Check if transform is enabled
-    if not transform.is_enabled:
+    is_available, availability_message = transform.check_availability()
+    if not is_available:
         return Response(
-            {
-                "error": "Transform is disabled",
-                "details": "Transform has been disabled by administrator",
-            },
+            {"error": "Transform is not available", "details": availability_message},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
-        # Import and execute transform wrapper
-        from apps.osint_tools.wrappers import get_transform_wrapper
+        response_data = {
+            "success": True,
+            "transform": TransformDetailSerializer(transform).data,
+            "test_input_value": target_value,
+            "generated_command": transform.get_command(target_value),
+            "execute": execute,
+        }
 
-        wrapper = get_transform_wrapper(transform.name)
-        if not wrapper:
-            return Response(
-                {
-                    "error": "Transform wrapper not found",
-                    "details": f"No wrapper found for transform {transform.name}",
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        if execute:
+            from apps.transforms.wrappers import OSINTToolError, ToolNotFoundError, get_wrapper
 
-        # Execute test
-        result = wrapper.execute(test_input, dry_run=True)
-
-        # Validate output against transform's output schema
-        if transform.output_schema and result.get("data"):
+            wrapper_result = None
             try:
-                import jsonschema
-
-                jsonschema.validate(result["data"], transform.output_schema)
-            except jsonschema.ValidationError as e:
-                logger.warning(
-                    f"Transform {transform.name} output validation failed: {e}"
+                wrapper_cls = get_wrapper(transform.tool_name)
+                wrapper = wrapper_cls()
+                input_type = transform.input_type if transform.input_type != "any" else "domain"
+                wrapper_result = wrapper.execute(
+                    {"type": input_type, "value": target_value}, timeout=transform.timeout
                 )
-                result["warnings"] = result.get("warnings", []) + [
-                    f"Output validation warning: {str(e)}"
-                ]
+            except (ValueError, ToolNotFoundError) as e:
+                return Response(
+                    {
+                        "error": "Transform wrapper not found or tool missing",
+                        "details": str(e),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except OSINTToolError as e:
+                return Response(
+                    {"error": "Transform execution failed", "details": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            response_data["test_result"] = wrapper_result
 
         logger.info(
-            f"Transform '{transform.name}' tested successfully by {request.user.username}"
+            f"Transform '{transform.name}' tested by {request.user.username}. Execute={execute}"
         )
 
-        return Response(
-            {
-                "success": True,
-                "transform": TransformDetailSerializer(transform).data,
-                "test_result": result,
-                "execution_time": result.get("execution_time", 0),
-            }
-        )
+        return Response(response_data)
 
     except Exception as e:
         logger.error(f"Transform test failed for '{transform.name}': {str(e)}")
@@ -435,12 +495,11 @@ def validate_transform(request, pk):
             validation_results["is_valid"] = False
         else:
             # Check for required placeholders
-            required_placeholders = ["{{input}}"]
-            for placeholder in required_placeholders:
-                if placeholder not in transform.command_template:
-                    validation_results["warnings"].append(
-                        f"Missing recommended placeholder: {placeholder}"
-                    )
+            required_placeholders = ["{input}", "{input_value}", "{target}", "{{input}}"]
+            if not any(p in transform.command_template for p in required_placeholders):
+                validation_results["warnings"].append(
+                    f"Command template should contain one of: {', '.join(required_placeholders)}"
+                )
 
         validation_results["checks"]["command_template"] = {
             "status": "pass" if transform.command_template else "fail",
@@ -450,126 +509,52 @@ def validate_transform(request, pk):
         }
 
         # Check input/output entity types
-        if not transform.input_entity_types:
-            validation_results["errors"].append("Input entity types are required")
-            validation_results["is_valid"] = False
-
-        if not transform.output_entity_types:
-            validation_results["errors"].append("Output entity types are required")
+        if not transform.input_type:
+            validation_results["errors"].append("Input type is required")
             validation_results["is_valid"] = False
 
         validation_results["checks"]["entity_types"] = {
             "status": "pass"
-            if (transform.input_entity_types and transform.output_entity_types)
+            if transform.input_type
             else "fail",
             "message": "Entity types are configured"
-            if (transform.input_entity_types and transform.output_entity_types)
+            if transform.input_type
             else "Entity types are missing",
         }
 
-        # Check schemas if provided
-        if transform.input_schema:
-            try:
-                import jsonschema
-
-                jsonschema.Draft7Validator.check_schema(transform.input_schema)
-                validation_results["checks"]["input_schema"] = {
-                    "status": "pass",
-                    "message": "Input schema is valid JSON Schema",
-                }
-            except Exception as e:
-                validation_results["errors"].append(f"Invalid input schema: {str(e)}")
-                validation_results["is_valid"] = False
-                validation_results["checks"]["input_schema"] = {
-                    "status": "fail",
-                    "message": f"Input schema validation failed: {str(e)}",
-                }
-
-        if transform.output_schema:
-            try:
-                import jsonschema
-
-                jsonschema.Draft7Validator.check_schema(transform.output_schema)
-                validation_results["checks"]["output_schema"] = {
-                    "status": "pass",
-                    "message": "Output schema is valid JSON Schema",
-                }
-            except Exception as e:
-                validation_results["errors"].append(f"Invalid output schema: {str(e)}")
-                validation_results["is_valid"] = False
-                validation_results["checks"]["output_schema"] = {
-                    "status": "fail",
-                    "message": f"Output schema validation failed: {str(e)}",
-                }
-
-        # Check configuration
-        if transform.configuration:
-            try:
-                if isinstance(transform.configuration, str):
-                    json.loads(transform.configuration)
-                validation_results["checks"]["configuration"] = {
-                    "status": "pass",
-                    "message": "Configuration is valid JSON",
-                }
-            except json.JSONDecodeError as e:
-                validation_results["errors"].append(
-                    f"Invalid configuration JSON: {str(e)}"
-                )
-                validation_results["is_valid"] = False
-                validation_results["checks"]["configuration"] = {
-                    "status": "fail",
-                    "message": f"Configuration JSON validation failed: {str(e)}",
-                }
-
         # Check timeout
-        if transform.timeout_seconds <= 0:
+        if transform.timeout <= 0:
             validation_results["errors"].append("Timeout must be greater than 0")
             validation_results["is_valid"] = False
-        elif transform.timeout_seconds > 3600:  # 1 hour
+        elif transform.timeout > 3600:  # 1 hour
             validation_results["warnings"].append("Timeout is very high (>1 hour)")
 
         validation_results["checks"]["timeout"] = {
-            "status": "pass" if transform.timeout_seconds > 0 else "fail",
-            "message": f"Timeout is set to {transform.timeout_seconds} seconds",
+            "status": "pass" if transform.timeout > 0 else "fail",
+            "message": f"Timeout is set to {transform.timeout} seconds",
         }
 
         # Check availability (if full validation)
         if validation_type == "full":
-            try:
-                from apps.osint_tools.wrappers import get_transform_wrapper
+            is_available, message = transform.check_availability()
+            validation_results["checks"]["availability"] = {
+                "status": "pass" if is_available else "fail",
+                "message": message,
+            }
+            if not is_available:
+                validation_results["errors"].append(f"Transform is not available: {message}")
+                validation_results["is_valid"] = False
+            else:
+                try:
+                    from apps.transforms.wrappers import list_available_tools
 
-                wrapper = get_transform_wrapper(transform.name)
-
-                if wrapper:
-                    availability_check = wrapper.check_availability()
-                    validation_results["checks"]["availability"] = {
-                        "status": "pass" if availability_check["available"] else "fail",
-                        "message": availability_check.get(
-                            "message", "Availability check completed"
-                        ),
-                    }
-
-                    if not availability_check["available"]:
-                        validation_results["errors"].append(
-                            f"Transform is not available: {availability_check.get('message', 'Unknown reason')}"
+                    available_tools = set(list_available_tools())
+                    if transform.tool_name not in available_tools and transform.tool_name not in {"custom"}:
+                        validation_results["warnings"].append(
+                            f"No wrapper registered for tool '{transform.tool_name}'"
                         )
-                        validation_results["is_valid"] = False
-                else:
-                    validation_results["errors"].append("Transform wrapper not found")
-                    validation_results["is_valid"] = False
-                    validation_results["checks"]["availability"] = {
-                        "status": "fail",
-                        "message": "Transform wrapper not found",
-                    }
-
-            except Exception as e:
-                validation_results["warnings"].append(
-                    f"Could not check availability: {str(e)}"
-                )
-                validation_results["checks"]["availability"] = {
-                    "status": "warning",
-                    "message": f"Availability check failed: {str(e)}",
-                }
+                except Exception:
+                    pass
 
         logger.info(
             f"Transform '{transform.name}' validated by {request.user.username}. "
@@ -628,36 +613,17 @@ def bulk_transform_actions(request):
             message = f"Deleted {deleted_count} transforms"
 
         elif action == "check_availability":
-            from apps.osint_tools.wrappers import get_transform_wrapper
-
             for transform in transforms:
                 try:
-                    wrapper = get_transform_wrapper(transform.name)
-                    if wrapper:
-                        availability = wrapper.check_availability()
-                        transform.is_available = availability["available"]
-                        transform.save()
-
-                        results.append(
-                            {
-                                "transform_id": transform.id,
-                                "name": transform.name,
-                                "available": availability["available"],
-                                "message": availability.get("message", ""),
-                            }
-                        )
-                    else:
-                        transform.is_available = False
-                        transform.save()
-
-                        results.append(
-                            {
-                                "transform_id": transform.id,
-                                "name": transform.name,
-                                "available": False,
-                                "message": "Wrapper not found",
-                            }
-                        )
+                    available, message = transform.check_availability()
+                    results.append(
+                        {
+                            "transform_id": transform.id,
+                            "name": transform.name,
+                            "available": bool(available),
+                            "message": message,
+                        }
+                    )
 
                 except Exception as e:
                     results.append(
@@ -673,46 +639,52 @@ def bulk_transform_actions(request):
             message = f"Checked {len(results)} transforms. {available_count} available."
 
         elif action == "update_command_templates":
-            # This would update command templates based on current wrapper configurations
             updated_count = 0
+
+            default_templates = {
+                "assetfinder": "assetfinder {input}",
+                "amass": "amass enum -d {input} -o /tmp/amass_output.txt && cat /tmp/amass_output.txt",
+                "nmap": "nmap -sS -O -A {input}",
+                "shodan": "shodan host {input}",
+                "whois": "whois {input}",
+                "dig": "dig {input} ANY",
+                "nslookup": "nslookup {input}",
+                "holehe": "holehe --output json --only-used {input}",
+            }
 
             for transform in transforms:
                 try:
-                    from apps.osint_tools.wrappers import get_transform_wrapper
+                    new_template = default_templates.get(transform.tool_name)
+                    if not new_template:
+                        results.append(
+                            {
+                                "transform_id": transform.id,
+                                "name": transform.name,
+                                "updated": False,
+                                "message": "No default template for tool",
+                            }
+                        )
+                        continue
 
-                    wrapper = get_transform_wrapper(transform.name)
-
-                    if wrapper and hasattr(wrapper, "get_default_command_template"):
-                        new_template = wrapper.get_default_command_template()
-                        if new_template and new_template != transform.command_template:
-                            transform.command_template = new_template
-                            transform.save()
-                            updated_count += 1
-
-                            results.append(
-                                {
-                                    "transform_id": transform.id,
-                                    "name": transform.name,
-                                    "updated": True,
-                                    "new_template": new_template,
-                                }
-                            )
-                        else:
-                            results.append(
-                                {
-                                    "transform_id": transform.id,
-                                    "name": transform.name,
-                                    "updated": False,
-                                    "message": "No update needed",
-                                }
-                            )
+                    if transform.command_template != new_template:
+                        transform.command_template = new_template
+                        transform.save(update_fields=["command_template", "updated_at"])
+                        updated_count += 1
+                        results.append(
+                            {
+                                "transform_id": transform.id,
+                                "name": transform.name,
+                                "updated": True,
+                                "new_template": new_template,
+                            }
+                        )
                     else:
                         results.append(
                             {
                                 "transform_id": transform.id,
                                 "name": transform.name,
                                 "updated": False,
-                                "message": "Wrapper not found or no template method",
+                                "message": "No update needed",
                             }
                         )
 
@@ -767,7 +739,7 @@ def import_transforms(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     transforms_data = serializer.validated_data["transforms"]
-    overwrite = serializer.validated_data.get("overwrite", False)
+    overwrite = serializer.validated_data.get("overwrite_existing", False)
 
     results = {"imported": 0, "updated": 0, "skipped": 0, "errors": []}
 
@@ -828,10 +800,7 @@ def export_transforms(request):
     transform_ids = request.query_params.get("ids")
 
     if transform_ids:
-        # Export specific transforms
-        ids = [
-            int(id.strip()) for id in transform_ids.split(",") if id.strip().isdigit()
-        ]
+        ids = [s.strip() for s in transform_ids.split(",") if s.strip()]
         transforms = Transform.objects.filter(id__in=ids)
     else:
         # Export all transforms
@@ -841,19 +810,22 @@ def export_transforms(request):
     export_data = []
     for transform in transforms:
         transform_data = {
+            "id": str(transform.id),
             "name": transform.name,
+            "display_name": transform.display_name,
             "description": transform.description,
             "category": transform.category,
-            "author": transform.author,
-            "version": transform.version,
+            "tool_name": transform.tool_name,
             "command_template": transform.command_template,
-            "input_entity_types": transform.input_entity_types,
-            "output_entity_types": transform.output_entity_types,
-            "input_schema": transform.input_schema,
-            "output_schema": transform.output_schema,
-            "configuration": transform.configuration,
-            "timeout_seconds": transform.timeout_seconds,
+            "input_type": transform.input_type,
+            "output_types": transform.output_types,
+            "parameters": transform.parameters,
+            "timeout": transform.timeout,
             "is_enabled": transform.is_enabled,
+            "requires_api_key": transform.requires_api_key,
+            "api_key_name": transform.api_key_name,
+            "created_at": transform.created_at.isoformat() if transform.created_at else None,
+            "updated_at": transform.updated_at.isoformat() if transform.updated_at else None,
         }
         export_data.append(transform_data)
 
@@ -910,7 +882,7 @@ def transform_usage_stats(request, pk):
     transform = get_object_or_404(Transform, pk=pk)
 
     # Get execution statistics
-    executions = TransformExecution.objects.filter(transform=transform)
+    executions = TransformExecution.objects.filter(transform_name=transform.name)
 
     # Time-based statistics
     now = timezone.now()
@@ -935,12 +907,7 @@ def transform_usage_stats(request, pk):
                 / max(executions.count(), 1)
             )
             * 100,
-            "avg_duration": executions.filter(
-                status="completed", ended_at__isnull=False
-            )
-            .extra(select={"duration": "EXTRACT(EPOCH FROM (ended_at - started_at))"})
-            .aggregate(avg_duration=Avg("duration"))["avg_duration"]
-            or 0,
+            "avg_duration": 0,
             "last_execution": executions.order_by("-created_at").first().created_at
             if executions.exists()
             else None,
@@ -956,6 +923,20 @@ def transform_usage_stats(request, pk):
             ),
         },
     }
+
+    duration_expr = ExpressionWrapper(
+        F("completed_at") - F("started_at"), output_field=DurationField()
+    )
+    avg_duration = (
+        executions.filter(
+            status="completed",
+            started_at__isnull=False,
+            completed_at__isnull=False,
+        )
+        .aggregate(avg=Avg(duration_expr))
+        .get("avg")
+    )
+    stats["usage"]["avg_duration"] = avg_duration.total_seconds() if avg_duration else 0
 
     return Response(stats)
 
@@ -987,6 +968,7 @@ def execute_holehe(request):
     investigation_id = request.data.get("investigation_id")
     timeout = request.data.get("timeout", 300)  # Default 5 minutes
     only_used = request.data.get("only_used", True)  # Only show accounts that exist
+    execution = None
 
     try:
         # Get or create investigation if provided
@@ -996,8 +978,9 @@ def execute_holehe(request):
                 Investigation, id=investigation_id, created_by=request.user
             )
 
-        # Get Holehe transform
-        holehe_transform = Transform.objects.filter(name="holehe").first()
+        holehe_transform = Transform.objects.filter(
+            tool_name="holehe", is_enabled=True
+        ).first()
         if not holehe_transform:
             return Response(
                 {
@@ -1006,29 +989,28 @@ def execute_holehe(request):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Check if transform is enabled and available
-        if not holehe_transform.is_enabled:
+        is_available, availability_message = holehe_transform.check_availability()
+        if not is_available:
             return Response(
-                {"error": "Holehe transform is disabled"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not holehe_transform.is_available:
-            return Response(
-                {"error": "Holehe is not available. Please check if it is installed."},
+                {"error": "Holehe is not available", "details": availability_message},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Create execution record if investigation is provided
-        execution = None
         if investigation:
+            from apps.entities.models import Entity
+
+            input_entity, _ = Entity.objects.get_or_create(
+                investigation=investigation, entity_type="email", value=email
+            )
             execution = TransformExecution.objects.create(
                 investigation=investigation,
-                transform=holehe_transform,
-                input_data={"email": email, "only_used": only_used},
-                created_by=request.user,
-                status="running",
+                transform_name=holehe_transform.name,
+                input_entity=input_entity,
+                status="pending",
+                parameters={"only_used": only_used},
             )
+            execution.start_execution()
 
         # Execute Holehe
         wrapper = HoleheWrapper()
@@ -1041,20 +1023,11 @@ def execute_holehe(request):
 
         # Update execution record if created
         if execution:
-            if result.get("success", False):
-                execution.status = "completed"
-                execution.output_data = result
-                execution.completed_at = timezone.now()
-            else:
-                execution.status = "failed"
-                execution.error_message = result.get("error", "Unknown error")
-                execution.completed_at = timezone.now()
-
-            execution.save()
+            execution.complete_execution(results={"wrapper_output": result})
 
         # Get results from wrapper output
         results = result.get("results", [])
-        execution_info = result.get("execution_info", {})
+        metadata = result.get("metadata", {})
 
         logger.info(
             f"Holehe executed for email '{email}' by {request.user.username}. "
@@ -1062,13 +1035,16 @@ def execute_holehe(request):
         )
 
         response_data = {
-            "success": result.get("success", False),
+            "success": True,
             "email": email,
-            "accounts_found": len(results),
-            "execution_time": execution_info.get("execution_time", 0),
-            "total_platforms_checked": execution_info.get("total_platforms_checked", 0),
+            "tool": result.get("tool"),
+            "input_type": result.get("input_type"),
+            "input_value": result.get("input_value"),
             "results": results,
-            "execution_info": execution_info,
+            "metadata": metadata,
+            "accounts_found": metadata.get("accounts_found", len(results)),
+            "execution_time": metadata.get("execution_time", 0) or 0,
+            "total_platforms_checked": metadata.get("total_platforms_checked", 0) or 0,
         }
 
         if execution:
@@ -1081,10 +1057,7 @@ def execute_holehe(request):
 
         # Update execution record if created
         if execution:
-            execution.status = "failed"
-            execution.error_message = str(e)
-            execution.completed_at = timezone.now()
-            execution.save()
+            execution.fail_execution(str(e))
 
         return Response(
             {"error": "Holehe execution failed", "details": str(e)},

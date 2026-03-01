@@ -1,8 +1,10 @@
 // Servicio API para la plataforma OSINT
 
-import type { ApiResponse, AuthResponse, LoginCredentials, User, Investigation, Entity, DashboardStats } from '../types';
+import type { ApiResponse, AuthResponse, LoginCredentials, User, Investigation, Entity, DashboardStats, TransformExecution } from '../types';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
+  'http://localhost:8000';
 
 class ApiService {
   private token: string | null = null;
@@ -75,21 +77,13 @@ class ApiService {
 
     if (this.token) {
       headers.Authorization = `Bearer ${this.token}`;
-      console.log(`🔐 Token presente para ${endpoint}:`, this.token.substring(0, 20) + '...');
-    } else {
-      console.log(`❌ No hay token para ${endpoint}`);
     }
-
-    console.log(`🌐 Haciendo petición a: ${url}`);
-    console.log(`📋 Headers:`, headers);
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
       });
-
-      console.log(`📡 Respuesta de ${endpoint}:`, response.status, response.statusText);
       let data: any = null;
       if (response.status !== 204) {
         const contentType = response.headers.get('content-type') || '';
@@ -114,8 +108,6 @@ class ApiService {
             return this.request<T>(endpoint, options, retryCount + 1);
           }
         }
-
-        console.log(`❌ Error en ${endpoint}:`, data);
         const fieldErrors: string[] = [];
         if (data && typeof data === 'object' && !Array.isArray(data)) {
           for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
@@ -169,20 +161,106 @@ class ApiService {
           errors
         };
       }
-
-      console.log(`✅ Éxito en ${endpoint}:`, data);
       return {
         success: true,
         data: data
       };
     } catch (error) {
-      console.error(`💥 Error de conexión en ${endpoint}:`, error);
       return {
         success: false,
         message: 'Error de conexión con el servidor',
         errors: [error instanceof Error ? error.message : 'Error desconocido']
       };
     }
+  }
+
+  private unwrapListPayload(payload: any): any[] {
+    if (Array.isArray(payload)) return payload;
+    if (payload && typeof payload === 'object' && Array.isArray(payload.results)) return payload.results;
+    return [];
+  }
+
+  private mapBackendEntity(entity: any): Entity {
+    const type = (entity?.entity_type ?? entity?.type ?? 'other') as Entity['type'];
+    const value = typeof entity?.value === 'string' ? entity.value : typeof entity?.name === 'string' ? entity.name : '';
+    const name = typeof entity?.display_name === 'string' && entity.display_name
+      ? entity.display_name
+      : typeof entity?.name === 'string' && entity.name
+        ? entity.name
+        : value;
+
+    const looksLikeUuid = (v: any) =>
+      typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+    const investigationId = typeof entity?.investigation_id === 'string'
+      ? entity.investigation_id
+      : entity?.investigation_id != null
+        ? String(entity.investigation_id)
+        : looksLikeUuid(entity?.investigation)
+          ? String(entity.investigation)
+          : undefined;
+
+    const investigationName = typeof entity?.investigation_name === 'string'
+      ? entity.investigation_name
+      : typeof entity?.investigation === 'string' && !looksLikeUuid(entity.investigation)
+        ? entity.investigation
+        : undefined;
+
+    return {
+      id: String(entity?.id ?? ''),
+      name,
+      type,
+      description: typeof entity?.description === 'string' ? entity.description : '',
+      properties: (entity?.properties && typeof entity.properties === 'object' ? entity.properties : {}) as Record<string, any>,
+      value,
+      investigation: investigationId ?? (typeof entity?.investigation === 'string' ? entity.investigation : undefined),
+      investigationId,
+      investigationName,
+      created_at: typeof entity?.created_at === 'string' ? entity.created_at : undefined,
+      updated_at: typeof entity?.updated_at === 'string' ? entity.updated_at : undefined,
+      createdAt: typeof entity?.created_at === 'string' ? entity.created_at : undefined,
+      updatedAt: typeof entity?.updated_at === 'string' ? entity.updated_at : undefined,
+    };
+  }
+
+  private mapBackendInvestigation(investigation: any): Investigation {
+    const status = (investigation?.status || 'active') as Investigation['status'];
+    const safeStatus: Investigation['status'] = (['active', 'completed', 'paused', 'archived'] as const).includes(status as any)
+      ? status
+      : 'active';
+
+    const rawPriority = (investigation?.priority || 'medium') as Investigation['priority'];
+    const safePriority: Investigation['priority'] = (['low', 'medium', 'high', 'critical'] as const).includes(rawPriority as any)
+      ? rawPriority
+      : 'medium';
+
+    const createdBy =
+      typeof investigation?.created_by?.username === 'string' && investigation.created_by.username
+        ? investigation.created_by.username
+        : 'N/A';
+
+    const entitiesRaw = Array.isArray(investigation?.entities) ? investigation.entities : [];
+    const metadata = investigation?.metadata && typeof investigation.metadata === 'object' ? investigation.metadata : {};
+    const metadataTags = Array.isArray((metadata as any).tags) ? (metadata as any).tags.filter((t: any) => typeof t === 'string') : [];
+
+    return {
+      id: String(investigation?.id ?? ''),
+      title: typeof investigation?.name === 'string' ? investigation.name : String(investigation?.title ?? ''),
+      description: typeof investigation?.description === 'string' ? investigation.description : '',
+      status: safeStatus,
+      priority: safePriority,
+      entities: entitiesRaw.map((e: any) => this.mapBackendEntity(e)),
+      createdBy,
+      createdAt: typeof investigation?.created_at === 'string' ? investigation.created_at : new Date().toISOString(),
+      updatedAt: typeof investigation?.updated_at === 'string' ? investigation.updated_at : new Date().toISOString(),
+      target: typeof investigation?.target === 'string' ? investigation.target : (metadata as any)?.target,
+      tags: metadataTags,
+      case_number: investigation?.case_number ?? (metadata as any)?.case_number,
+      jurisdiction: investigation?.jurisdiction ?? (metadata as any)?.jurisdiction,
+      estimated_loss: investigation?.estimated_loss ?? (metadata as any)?.estimated_loss,
+      victim_count: investigation?.victim_count ?? (metadata as any)?.victim_count,
+      metadata,
+    };
   }
 
   // Métodos de autenticación
@@ -246,7 +324,28 @@ class ApiService {
   }
 
   async getInvestigation(id: string): Promise<ApiResponse<Investigation>> {
-    return this.request<Investigation>(`/api/investigations/${id}/`);
+    const response = await this.request<any>(`/api/investigations/${id}/`);
+    if (!response.success || !response.data) return response as ApiResponse<Investigation>;
+    return { success: true, data: this.mapBackendInvestigation(response.data) };
+  }
+
+  async autoRecon(target: string, investigationId?: string): Promise<ApiResponse<any>> {
+    return this.request<any>('/api/investigations/auto-recon/', {
+      method: 'POST',
+      body: JSON.stringify({ target, investigation_id: investigationId })
+    });
+  }
+
+  async getOsintCatalog(target?: string): Promise<ApiResponse<any>> {
+    const query = target ? `?target=${encodeURIComponent(target)}` : '';
+    return this.request<any>(`/api/investigations/osint-catalog/${query}`);
+  }
+
+  async executeDorks(investigationId: string, dorks: any[], targetDomain?: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/api/investigations/${investigationId}/execute-dorks/`, {
+      method: 'POST',
+      body: JSON.stringify({ dorks, target_domain: targetDomain })
+    });
   }
 
   async createInvestigation(investigation: Partial<Investigation>): Promise<ApiResponse<Investigation>> {
@@ -269,17 +368,19 @@ class ApiService {
     });
   }
 
-  async getInvestigationStats(): Promise<ApiResponse<any>> {
-    return this.request<any>('/api/investigations/stats/');
+  async getInvestigationStats(investigationId: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/api/investigations/${investigationId}/stats/`);
   }
 
-  async getInvestigationGraph(investigationId: string): Promise<ApiResponse<any>> {
-    return this.request<any>(`/api/investigations/${investigationId}/entities/graph/`);
+  async getInvestigationGraph(investigationId: string, limit: number = 500): Promise<ApiResponse<any>> {
+    return this.request<any>(`/api/investigations/${investigationId}/entities/graph/?limit=${limit}`);
   }
 
-  // Métodos para entidades
-  async getEntities(params?: Record<string, any>): Promise<ApiResponse<Entity[]>> {
-    let url = '/api/entities/';
+  async listTransformExecutions(
+    investigationId: string,
+    params?: Record<string, any>
+  ): Promise<ApiResponse<TransformExecution[]>> {
+    let url = `/api/investigations/${investigationId}/executions/`;
     if (params) {
       const searchParams = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => {
@@ -291,29 +392,181 @@ class ApiService {
         url += '?' + searchParams.toString();
       }
     }
-    return this.request<Entity[]>(url);
+    const response = await this.request<any>(url);
+    if (!response.success) return response as ApiResponse<TransformExecution[]>;
+    return { success: true, data: this.unwrapListPayload(response.data) as TransformExecution[] };
   }
 
-  async getEntity(id: string): Promise<ApiResponse<Entity>> {
-    return this.request<Entity>(`/api/entities/${id}/`);
+  async getTransformExecution(
+    investigationId: string,
+    executionId: string
+  ): Promise<ApiResponse<TransformExecution>> {
+    return this.request<TransformExecution>(
+      `/api/investigations/${investigationId}/executions/${executionId}/`
+    );
   }
 
-  async createEntity(entity: Partial<Entity>): Promise<ApiResponse<Entity>> {
-    return this.request<Entity>('/api/entities/', {
+  async createTransformExecution(
+    investigationId: string,
+    payload: {
+      transform_name: string;
+      input_entity_id?: string;
+      input?: { entity_type: string; value: string };
+      parameters?: Record<string, any>;
+    }
+  ): Promise<ApiResponse<TransformExecution>> {
+    return this.request<TransformExecution>(
+      `/api/investigations/${investigationId}/executions/`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  async controlTransformExecution(
+    investigationId: string,
+    executionId: string,
+    action: 'cancel' | 'retry'
+  ): Promise<ApiResponse<any>> {
+    return this.request<any>(
+      `/api/investigations/${investigationId}/executions/${executionId}/control/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      }
+    );
+  }
+
+  async listTransforms(params?: Record<string, any>): Promise<ApiResponse<any[]>> {
+    let url = '/api/transforms/';
+    if (params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          searchParams.append(key, value.toString());
+        }
+      });
+      if (searchParams.toString()) {
+        url += '?' + searchParams.toString();
+      }
+    }
+    const response = await this.request<any>(url);
+    if (!response.success) return response as ApiResponse<any[]>;
+    return { success: true, data: this.unwrapListPayload(response.data) };
+  }
+
+  async getGeoEvents(limit?: number): Promise<ApiResponse<any[]>> {
+    let url = '/api/events/geo/';
+    if (typeof limit === 'number' && Number.isFinite(limit)) {
+      const searchParams = new URLSearchParams();
+      searchParams.append('limit', Math.max(1, Math.floor(limit)).toString());
+      url += `?${searchParams.toString()}`;
+    }
+    const response = await this.request<any>(url);
+    if (!response.success) return response as ApiResponse<any[]>;
+    const payload = response.data;
+    return {
+      success: true,
+      data: Array.isArray(payload) ? payload : this.unwrapListPayload(payload),
+    };
+  }
+
+  async getExecutionLogs(
+    investigationId: string,
+    executionId: string
+  ): Promise<ApiResponse<any>> {
+    return this.request<any>(
+      `/api/investigations/${investigationId}/executions/${executionId}/logs/`
+    );
+  }
+
+  // Métodos para entidades
+  async getEntities(params?: Record<string, any>, investigationId?: string): Promise<ApiResponse<Entity[]>> {
+    let url = investigationId ? `/api/investigations/${investigationId}/entities/` : '/api/entities/';
+    if (params) {
+      const searchParams = new URLSearchParams();
+      const normalizedParams: Record<string, any> = { ...params };
+      if (normalizedParams.type && !normalizedParams.entity_type) {
+        normalizedParams.entity_type = normalizedParams.type;
+        delete normalizedParams.type;
+      }
+      delete normalizedParams.investigation;
+      Object.entries(normalizedParams).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          searchParams.append(key, value.toString());
+        }
+      });
+      if (searchParams.toString()) {
+        url += '?' + searchParams.toString();
+      }
+    }
+    const response = await this.request<any>(url);
+    if (!response.success) return response as ApiResponse<Entity[]>;
+    const items = this.unwrapListPayload(response.data);
+    return {
+      success: true,
+      data: items.map((item) => this.mapBackendEntity(item)),
+    };
+  }
+
+  async getEntity(id: string, investigationId?: string): Promise<ApiResponse<Entity>> {
+    if (investigationId) {
+      const response = await this.request<any>(`/api/investigations/${investigationId}/entities/${id}/`);
+      if (!response.success) return response as ApiResponse<Entity>;
+      return { success: true, data: this.mapBackendEntity(response.data) };
+    }
+    const list = await this.getEntities();
+    if (!list.success) return { success: false, message: list.message, errors: list.errors };
+    if (!list.data) return { success: false, message: 'Recurso no encontrado.', errors: ['Entity list not available'] };
+    const found = list.data.find((e) => e.id === id);
+    if (!found) return { success: false, message: 'Recurso no encontrado.', errors: ['Entity not found'] };
+    return { success: true, data: found };
+  }
+
+  async createEntity(entity: Partial<Entity>, investigationId?: string): Promise<ApiResponse<Entity>> {
+    if (!investigationId) {
+      return { success: false, message: 'Investigación requerida para crear la entidad', errors: ['Missing investigationId'] };
+    }
+    const payload = {
+      entity_type: (entity as any).entity_type ?? entity.type,
+      display_name: entity.name,
+      value: entity.value,
+      description: entity.description,
+      properties: entity.properties,
+    };
+    const response = await this.request<any>(`/api/investigations/${investigationId}/entities/`, {
       method: 'POST',
-      body: JSON.stringify(entity),
+      body: JSON.stringify(payload),
     });
+    if (!response.success) return response as ApiResponse<Entity>;
+    return { success: true, data: this.mapBackendEntity(response.data) };
   }
 
-  async updateEntity(id: string, entity: Partial<Entity>): Promise<ApiResponse<Entity>> {
-    return this.request<Entity>(`/api/entities/${id}/`, {
+  async updateEntity(id: string, entity: Partial<Entity>, investigationId?: string): Promise<ApiResponse<Entity>> {
+    if (!investigationId) {
+      return { success: false, message: 'Investigación requerida para actualizar la entidad', errors: ['Missing investigationId'] };
+    }
+    const payload = {
+      entity_type: (entity as any).entity_type ?? entity.type,
+      display_name: entity.name,
+      value: entity.value,
+      description: entity.description,
+      properties: entity.properties,
+    };
+    const response = await this.request<any>(`/api/investigations/${investigationId}/entities/${id}/`, {
       method: 'PUT',
-      body: JSON.stringify(entity),
+      body: JSON.stringify(payload),
     });
+    if (!response.success) return response as ApiResponse<Entity>;
+    return { success: true, data: this.mapBackendEntity(response.data) };
   }
 
-  async deleteEntity(id: string): Promise<ApiResponse<void>> {
-    return this.request<void>(`/api/entities/${id}/`, {
+  async deleteEntity(id: string, investigationId?: string): Promise<ApiResponse<void>> {
+    if (!investigationId) {
+      return { success: false, message: 'Investigación requerida para eliminar la entidad', errors: ['Missing investigationId'] };
+    }
+    return this.request<void>(`/api/investigations/${investigationId}/entities/${id}/`, {
       method: 'DELETE',
     });
   }
@@ -322,30 +575,91 @@ class ApiService {
     return this.request<string[]>('/api/entities/types/');
   }
 
-  async getEntityRelationships(id: string): Promise<ApiResponse<any[]>> {
-    return this.request<any[]>(`/api/entities/${id}/relationships/`);
+  async getEntityRelationships(entityId: string, investigationId?: string): Promise<ApiResponse<any>> {
+    if (!investigationId) {
+      return { success: false, message: 'Investigación requerida para relaciones', errors: ['Missing investigationId'] };
+    }
+    const response = await this.request<any>(`/api/investigations/${investigationId}/entities/${entityId}/relationships/`);
+    if (!response.success || !response.data) return response;
+
+    const payload = response.data;
+    const outgoing = Array.isArray(payload?.outgoing_relationships) ? payload.outgoing_relationships : [];
+    const incoming = Array.isArray(payload?.incoming_relationships) ? payload.incoming_relationships : [];
+
+    const normalizeRelationship = (rel: any) => {
+      const sourceEntityRaw = rel?.source_entity;
+      const targetEntityRaw = rel?.target_entity;
+
+      return {
+        id: String(rel?.id ?? ''),
+        source_entity_id: String(sourceEntityRaw?.id ?? rel?.source_entity_id ?? ''),
+        target_entity_id: String(targetEntityRaw?.id ?? rel?.target_entity_id ?? ''),
+        relationship_type: String(rel?.relationship_type ?? ''),
+        properties: (rel?.properties && typeof rel.properties === 'object') ? rel.properties : undefined,
+        created_at: typeof rel?.created_at === 'string' ? rel.created_at : '',
+        source_entity: sourceEntityRaw ? this.mapBackendEntity(sourceEntityRaw) : undefined,
+        target_entity: targetEntityRaw ? this.mapBackendEntity(targetEntityRaw) : undefined,
+      };
+    };
+
+    return {
+      success: true,
+      data: [...outgoing, ...incoming].map(normalizeRelationship),
+    };
   }
 
-  async createEntityRelationship(sourceId: string, targetId: string, relationshipType: string): Promise<ApiResponse<any>> {
-    return this.request<any>('/api/entities/relationships/', {
+  async createEntityRelationship(
+    sourceId: string,
+    targetId: string,
+    relationshipType: string,
+    investigationId?: string
+  ): Promise<ApiResponse<any>> {
+    if (!investigationId) {
+      return { success: false, message: 'Investigación requerida para crear relación', errors: ['Missing investigationId'] };
+    }
+    return this.request<any>(`/api/investigations/${investigationId}/relationships/`, {
       method: 'POST',
       body: JSON.stringify({
-        source_entity: sourceId,
-        target_entity: targetId,
-        relationship_type: relationshipType
+        source_entity_id: sourceId,
+        target_entity_id: targetId,
+        relationship_type: relationshipType,
       }),
     });
   }
 
-  async deleteEntityRelationship(relationshipId: string): Promise<ApiResponse<void>> {
-    return this.request<void>(`/api/entities/relationships/${relationshipId}/`, {
-      method: 'DELETE',
-    });
+  async deleteEntityRelationship(relationshipId: string, investigationId?: string): Promise<ApiResponse<void>> {
+    if (!investigationId) {
+      return { success: false, message: 'Investigación requerida para eliminar relación', errors: ['Missing investigationId'] };
+    }
+    return this.request<void>(`/api/investigations/${investigationId}/relationships/${relationshipId}/`, { method: 'DELETE' });
   }
 
   // Métodos para dashboard (usar estadísticas de usuario)
+  async getUserStats(): Promise<ApiResponse<any>> {
+    return this.request<any>('/api/user/stats/');
+  }
+
   async getDashboardStats(): Promise<ApiResponse<DashboardStats>> {
-    return this.request<DashboardStats>('/api/auth/user/stats/');
+    const response = await this.getUserStats();
+    if (!response.success || !response.data) {
+      return response as ApiResponse<DashboardStats>;
+    }
+
+    const investigations = response.data?.investigations ?? {};
+    const byStatus = investigations?.by_status ?? {};
+    const executions = response.data?.executions ?? {};
+    const entities = response.data?.entities ?? {};
+
+    return {
+      success: true,
+      data: {
+        totalInvestigations: Number(investigations?.total ?? 0),
+        activeInvestigations: Number(byStatus?.active ?? 0),
+        completedInvestigations: Number(byStatus?.completed ?? 0),
+        totalEntities: Number(entities?.total ?? 0),
+        recentActivity: Number(investigations?.recent ?? 0) + Number(executions?.recent ?? 0),
+      },
+    };
   }
 
   // Verificar si el usuario está autenticado

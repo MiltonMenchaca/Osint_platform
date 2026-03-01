@@ -109,10 +109,17 @@ class UserRegistrationView(generics.CreateAPIView):
         with transaction.atomic():
             user = serializer.save()
 
-            # Create user profile
-            UserProfile.objects.create(
-                user=user, registration_ip=self.get_client_ip(self.request)
+            profile, _ = UserProfile.objects.get_or_create(
+                user=user,
+                defaults={
+                    "role": "viewer",
+                    "timezone": "UTC",
+                },
             )
+            ip = self.get_client_ip(self.request)
+            if ip:
+                profile.last_login_ip = ip
+                profile.save(update_fields=["last_login_ip", "updated_at"])
 
             logger.info(f"New user registered: {user.username}")
 
@@ -358,7 +365,7 @@ def current_user(request):
     Get current authenticated user information
     """
     user = request.user
-    profile = user.profile
+    profile, created = UserProfile.objects.get_or_create(user=user)
 
     return Response(
         {
@@ -395,25 +402,49 @@ def user_stats(request):
 
     # Get user's investigations and executions
     from apps.investigations.models import Investigation, TransformExecution
+    from apps.entities.models import Entity
 
     investigations = Investigation.objects.filter(created_by=user)
     executions = TransformExecution.objects.filter(investigation__created_by=user)
+    entities = Entity.objects.filter(investigation__created_by=user)
 
     # Time-based statistics
     now = timezone.now()
+    last_24h = now - timedelta(hours=24)
+    last_7d = now - timedelta(days=7)
+    last_30d = now - timedelta(days=30)
     last_24h_investigations = investigations.filter(
-        created_at__gte=now - timedelta(hours=24)
+        created_at__gte=last_24h
     )
     last_7d_investigations = investigations.filter(
-        created_at__gte=now - timedelta(days=7)
+        created_at__gte=last_7d
     )
     last_30d_investigations = investigations.filter(
-        created_at__gte=now - timedelta(days=30)
+        created_at__gte=last_30d
     )
 
-    last_24h_executions = executions.filter(created_at__gte=now - timedelta(hours=24))
-    last_7d_executions = executions.filter(created_at__gte=now - timedelta(days=7))
-    last_30d_executions = executions.filter(created_at__gte=now - timedelta(days=30))
+    last_24h_executions = executions.filter(created_at__gte=last_24h)
+    last_7d_executions = executions.filter(created_at__gte=last_7d)
+    last_30d_executions = executions.filter(created_at__gte=last_30d)
+
+    last_24h_entities = entities.filter(created_at__gte=last_24h)
+    last_7d_entities = entities.filter(created_at__gte=last_7d)
+    last_30d_entities = entities.filter(created_at__gte=last_30d)
+
+    investigations_by_status = {key: 0 for key in ["active", "completed", "paused", "archived"]}
+    investigations_by_status.update(
+        dict(
+            investigations.values("status")
+            .annotate(count=Count("id"))
+            .values_list("status", "count")
+        )
+    )
+
+    entities_by_type = dict(
+        entities.values("entity_type")
+        .annotate(count=Count("id"))
+        .values_list("entity_type", "count")
+    )
 
     stats = {
         "user": {
@@ -434,8 +465,12 @@ def user_stats(request):
         },
         "investigations": {
             "total": investigations.count(),
-            "active": investigations.filter(status="active").count(),
-            "completed": investigations.filter(status="completed").count(),
+            "by_status": investigations_by_status,
+            "active": investigations_by_status.get("active", 0),
+            "completed": investigations_by_status.get("completed", 0),
+            "paused": investigations_by_status.get("paused", 0),
+            "archived": investigations_by_status.get("archived", 0),
+            "recent": last_24h_investigations.count(),
             "last_24h": last_24h_investigations.count(),
             "last_7d": last_7d_investigations.count(),
             "last_30d": last_30d_investigations.count(),
@@ -445,9 +480,18 @@ def user_stats(request):
             "successful": executions.filter(status="completed").count(),
             "failed": executions.filter(status="failed").count(),
             "running": executions.filter(status="running").count(),
+            "recent": last_24h_executions.count(),
             "last_24h": last_24h_executions.count(),
             "last_7d": last_7d_executions.count(),
             "last_30d": last_30d_executions.count(),
+        },
+        "entities": {
+            "total": entities.count(),
+            "by_type": entities_by_type,
+            "recent": last_24h_entities.count(),
+            "last_24h": last_24h_entities.count(),
+            "last_7d": last_7d_entities.count(),
+            "last_30d": last_30d_entities.count(),
         },
         "api_tokens": {
             "total": APIToken.objects.filter(user=user).count(),

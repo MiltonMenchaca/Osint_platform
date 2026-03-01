@@ -1,9 +1,9 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Container, Row, Col, Card, Badge, Spinner } from 'react-bootstrap';
 import type { User } from '../types';
-import Header from '../components/Header';
+import Header from '../shared/components/Header';
 
-const ProEventMap = lazy(() => import('../components/ProEventMap'));
+const ProEventMap = lazy(() => import('../features/investigation/components/ProEventMap'));
 
 type EventSeverity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -24,7 +24,7 @@ const EventsMapPage = ({ user, onLogout }: EventsMapPageProps) => {
         <Row className="align-items-center mb-3">
           <Col>
             <div className="d-flex align-items-center gap-2 flex-wrap">
-              <h4 className="text-light mb-0">
+              <h4 className="mb-0">
                 <i className="bi bi-globe2 me-2"></i>
                 Mapa de Eventos
               </h4>

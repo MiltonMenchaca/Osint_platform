@@ -87,3 +87,11 @@ osint_operativo/config_real.json
 
 # Docker
 .dockerignore
+
+# Data / Reports / Archives
+archives/
+outputs/
+data/raw/
+data/processed/
+data/external/
+docs/reports/

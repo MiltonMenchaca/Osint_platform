@@ -140,11 +140,45 @@ class EntityListCreateView(generics.ListCreateAPIView):
 
         return queryset.select_related("investigation")
 
+    def create(self, request, *args, **kwargs):
+        """Create a new entity or update existing one (deduplication)"""
+        investigation_id = self.kwargs.get("investigation_id")
+        investigation = get_object_or_404(
+            Investigation, id=investigation_id, created_by=self.request.user
+        )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        entity_type = serializer.validated_data.get("entity_type")
+        value = serializer.validated_data.get("value")
+
+        # Check for existing entity
+        existing_entity = Entity.objects.filter(
+            investigation=investigation, entity_type=entity_type, value=value
+        ).first()
+
+        if existing_entity:
+            # Merge properties
+            new_properties = serializer.validated_data.get("properties", {})
+            if new_properties:
+                existing_entity.properties.update(new_properties)
+                existing_entity.save()
+            
+            # Serialize the existing entity
+            response_serializer = EntityListSerializer(existing_entity)
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         """Set the investigation for the entity"""
         investigation_id = self.kwargs.get("investigation_id")
-
-        # Verify user owns the investigation
+        
+        # We fetch investigation again here or could pass it if we refactored, 
+        # but for safety let's just get it (cached by DB query usually)
         investigation = get_object_or_404(
             Investigation, id=investigation_id, created_by=self.request.user
         )
@@ -167,7 +201,7 @@ class EntityDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_serializer_class(self):
         if self.request.method in ["PUT", "PATCH"]:
-            return EntityDetailSerializer  # Using DetailSerializer temporarily
+            return EntityCreateSerializer
         return EntityDetailSerializer
 
     def get_queryset(self):
@@ -488,6 +522,66 @@ def entity_stats(request, investigation_id):
     return Response(stats)
 
 
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, HasAPIAccess])
+def geo_events(request):
+    limit_param = request.query_params.get("limit")
+    try:
+        limit = int(limit_param) if limit_param is not None else 200
+    except ValueError:
+        limit = 200
+    limit = max(1, min(limit, 500))
+
+    entities = Entity.objects.filter(investigation__created_by=request.user).order_by(
+        "-created_at"
+    )
+    events = []
+
+    def extract_lat_lng(entity):
+        props = entity.properties or {}
+        lat = props.get("lat", props.get("latitude"))
+        lng = props.get("lng", props.get("lon", props.get("longitude")))
+        if lat is None or lng is None:
+            if entity.entity_type == "geolocation" and isinstance(entity.value, str):
+                parts = [p.strip() for p in entity.value.split(",") if p.strip()]
+                if len(parts) >= 2:
+                    lat = parts[0]
+                    lng = parts[1]
+        try:
+            if lat is None or lng is None:
+                return None, None
+            return float(lat), float(lng)
+        except (TypeError, ValueError):
+            return None, None
+
+    for entity in entities:
+        lat, lng = extract_lat_lng(entity)
+        if lat is None or lng is None:
+            continue
+
+        props = entity.properties or {}
+        title = entity.display_name or entity.value or "Evento"
+        kind = props.get("kind") or props.get("type") or entity.entity_type or "ioc"
+        severity = props.get("severity") or "low"
+        timestamp = entity.updated_at or entity.created_at
+        events.append(
+            {
+                "id": str(entity.id),
+                "title": title,
+                "kind": kind,
+                "severity": severity,
+                "lat": lat,
+                "lng": lng,
+                "timestamp": timestamp.isoformat() if timestamp else None,
+                "source": props.get("source") or entity.source,
+            }
+        )
+        if len(events) >= limit:
+            break
+
+    return Response(events)
+
+
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated, HasAPIAccess])
 def bulk_create_entities(request, investigation_id):
@@ -668,15 +762,35 @@ def entity_graph(request, investigation_id):
         Investigation, id=investigation_id, created_by=request.user
     )
 
-    # Check cache first
-    cache_key = f"entity_graph_{investigation_id}"
+    # Get limit from query params
+    try:
+        limit = int(request.query_params.get("limit", 500))  # Default to 500 nodes to prevent saturation
+    except ValueError:
+        limit = 500
+
+    # Check cache first (include limit in key)
+    cache_key = f"entity_graph_{investigation_id}_{limit}"
     cached_graph = cache.get(cache_key)
     if cached_graph:
         return Response(cached_graph)
 
-    entities = Entity.objects.filter(investigation=investigation)
+    # Get entities, prioritize by connectivity (degree centrality)
+    entities_qs = Entity.objects.filter(investigation=investigation).annotate(
+        degree=Count("source_relationships") + Count("target_relationships")
+    ).order_by("-degree", "-created_at")
+
+    if limit > 0:
+        entities_qs = entities_qs[:limit]
+
+    # Fetch entities
+    entities = list(entities_qs)
+    entity_ids = {e.id for e in entities}
+
+    # Get relationships only between selected entities
     relationships = Relationship.objects.filter(
-        investigation=investigation
+        investigation=investigation,
+        source_entity__id__in=entity_ids,
+        target_entity__id__in=entity_ids
     ).select_related("source_entity", "target_entity")
 
     # Build graph data
@@ -692,6 +806,7 @@ def entity_graph(request, investigation_id):
                 "confidence": entity.confidence_score,
                 "verified": bool((entity.properties or {}).get("verified")),
                 "properties": entity.properties or {},
+                "degree": getattr(entity, 'degree', 0)
             }
         )
 
@@ -717,11 +832,12 @@ def entity_graph(request, investigation_id):
             "edge_count": len(edges),
             "node_types": list(set(node["type"] for node in nodes)),
             "edge_types": list(set(edge["type"] for edge in edges)),
+            "total_nodes_available": Entity.objects.filter(investigation=investigation).count(),
         },
     }
 
-    # Cache for 10 minutes
-    cache.set(cache_key, graph_data, 600)
+    # Cache for 60 seconds
+    cache.set(cache_key, graph_data, 60)
 
     return Response(graph_data)
 
@@ -811,6 +927,12 @@ def validate_entities(request, investigation_id):
             "results": validation_results,
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, HasAPIAccess])
+def entity_types(request):
+    return Response([choice[0] for choice in Entity.ENTITY_TYPE_CHOICES])
 
 
 @api_view(["GET"])

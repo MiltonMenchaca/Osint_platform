@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import shutil
+import string
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
@@ -100,7 +101,9 @@ class BaseWrapper(ABC):
         start_time = datetime.now()
 
         try:
-            logger.info(f"Executing command: {' '.join(command)}")
+            safe_command = self._redact_command(command)
+            safe_command_str = " ".join(safe_command)
+            logger.info(f"Executing command: {safe_command_str}")
 
             # Prepare environment
             exec_env = os.environ.copy()
@@ -131,7 +134,7 @@ class BaseWrapper(ABC):
             execution_time = (end_time - start_time).total_seconds()
 
             result = {
-                "command": " ".join(command),
+                "command": safe_command_str,
                 "return_code": process.returncode,
                 "stdout": stdout,
                 "stderr": stderr,
@@ -158,6 +161,52 @@ class BaseWrapper(ABC):
             if isinstance(e, (ToolTimeoutError, ToolExecutionError)):
                 raise
             raise OSINTToolError(f"Unexpected error executing command: {e}")
+
+    def _looks_like_secret(self, value: str) -> bool:
+        if not isinstance(value, str):
+            return False
+        if len(value) < 28:
+            return False
+        if value.startswith("-"):
+            return False
+        if any(ch.isspace() for ch in value):
+            return False
+        if "/" in value or "\\" in value:
+            return False
+        allowed = set(string.ascii_letters + string.digits + "-_")
+        return all(ch in allowed for ch in value)
+
+    def _redact_command(self, command: List[str]) -> List[str]:
+        if not command:
+            return []
+
+        redacted: List[str] = []
+        redact_next = False
+
+        for idx, part in enumerate(command):
+            if redact_next:
+                redacted.append("***")
+                redact_next = False
+                continue
+
+            lower = part.lower() if isinstance(part, str) else ""
+            if lower in {"--key", "--token", "--password", "--secret"}:
+                redacted.append(part)
+                redact_next = True
+                continue
+
+            prev = command[idx - 1].lower() if idx > 0 and isinstance(command[idx - 1], str) else ""
+            if self.tool_name == "shodan" and prev == "init":
+                redacted.append("***")
+                continue
+
+            if isinstance(part, str) and self._looks_like_secret(part):
+                redacted.append("***")
+                continue
+
+            redacted.append(part)
+
+        return redacted
 
     def _create_temp_dir(self) -> str:
         """Create a temporary directory for tool execution"""
@@ -226,19 +275,34 @@ class BaseWrapper(ABC):
         self, results: List[Dict[str, Any]], execution_info: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Format tool output in standard format"""
+        metadata: Dict[str, Any] = {
+            "execution_time": execution_info.get("execution_time"),
+            "start_time": execution_info.get("start_time"),
+            "end_time": execution_info.get("end_time"),
+            "command": execution_info.get("command"),
+            "tool_version": self.get_version(),
+            "result_count": len(results),
+        }
+
+        for key, value in execution_info.items():
+            if key in {
+                "input_type",
+                "input_value",
+                "execution_time",
+                "start_time",
+                "end_time",
+                "command",
+            }:
+                continue
+            if key not in metadata:
+                metadata[key] = value
+
         return {
             "tool": self.tool_name,
             "input_type": execution_info.get("input_type"),
             "input_value": execution_info.get("input_value"),
             "results": results,
-            "metadata": {
-                "execution_time": execution_info.get("execution_time"),
-                "start_time": execution_info.get("start_time"),
-                "end_time": execution_info.get("end_time"),
-                "command": execution_info.get("command"),
-                "tool_version": self.get_version(),
-                "result_count": len(results),
-            },
+            "metadata": metadata,
         }
 
     def get_tool_info(self) -> Dict[str, Any]:

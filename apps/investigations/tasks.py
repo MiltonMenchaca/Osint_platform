@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import subprocess
 from typing import Any, Dict, List
 
@@ -59,7 +60,10 @@ def execute_transform(
 
         # Execute the transform
         results = _execute_osint_tool(
-            transform=transform, input_value=input_value, parameters=exec_parameters
+            transform=transform,
+            input_entity=execution.input_entity,
+            input_value=input_value,
+            parameters=exec_parameters,
         )
 
         # Process results and create entities/relationships
@@ -100,7 +104,7 @@ def execute_transform(
 
 
 def _execute_osint_tool(
-    transform: Any, input_value: str, parameters: Dict[str, Any]
+    transform: Any, input_entity: Any, input_value: str, parameters: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Execute the actual OSINT tool
@@ -114,10 +118,63 @@ def _execute_osint_tool(
         Dict containing raw tool output
     """
     try:
+        try:
+            from apps.transforms.wrappers import (
+                OSINTToolError,
+                ToolNotFoundError,
+                get_wrapper,
+            )
+
+            wrapper_cls = get_wrapper(transform.tool_name)
+            wrapper = wrapper_cls()
+            input_type = (
+                transform.input_type
+                if transform.input_type != "any"
+                else getattr(input_entity, "entity_type", "domain")
+            )
+
+            wrapper_kwargs = dict(parameters or {})
+            if "timeout" not in wrapper_kwargs:
+                wrapper_kwargs["timeout"] = transform.timeout
+
+            print(f"DEBUG: Executing wrapper for {transform.tool_name} with value {input_value}")
+            wrapper_result = wrapper.execute(
+                {"type": input_type, "value": input_value},
+                **wrapper_kwargs,
+            )
+            print(f"DEBUG: Wrapper result: {json.dumps(wrapper_result)[:100]}...")
+
+            metadata = wrapper_result.get("metadata") or {}
+
+            return {
+                "command": metadata.get("command") or transform.get_command(
+                    input_value, **(parameters or {})
+                ),
+                "return_code": 0,
+                "stdout": json.dumps(wrapper_result, ensure_ascii=False),
+                "stderr": "",
+                "parsed_output": wrapper_result.get("results", []) or [],
+                "wrapper_output": wrapper_result,
+            }
+
+        except (ValueError, ToolNotFoundError) as e:
+            logger.warning(f"Wrapper not found for {transform.tool_name}: {e}")
+            pass
+        except OSINTToolError:
+            raise
+        except Exception as e:
+            logger.warning(f"Wrapper execution failed: {e}. Falling back to command line.")
+            import traceback
+            logger.warning(traceback.format_exc())
+            pass
+
         # Get the command to execute
         command = transform.get_command(input_value, **parameters)
 
         logger.info(f"Executing command: {command}")
+        
+        import tempfile
+        cwd = getattr(settings, "OSINT_TOOLS_DIR", tempfile.gettempdir())
 
         # Execute the command
         result = subprocess.run(
@@ -126,7 +183,7 @@ def _execute_osint_tool(
             capture_output=True,
             text=True,
             timeout=transform.timeout,
-            cwd=getattr(settings, "OSINT_TOOLS_DIR", "/tmp"),
+            cwd=cwd,
         )
 
         if result.returncode != 0:
@@ -237,27 +294,119 @@ def _parse_tool_output(tool_name: str, output: str) -> List[Dict[str, Any]]:
                             )
 
         elif tool_name == "shodan":
-            # Parse Shodan API response (assuming JSON)
             try:
                 data = json.loads(output)
-                if "matches" in data:
-                    for match in data["matches"]:
-                        parsed_entities.append(
-                            {
-                                "type": "ip",
-                                "value": match.get("ip_str", ""),
-                                "source": "shodan",
-                                "properties": {
-                                    "port": match.get("port"),
-                                    "org": match.get("org"),
-                                    "hostnames": match.get("hostnames", []),
-                                    "location": match.get("location", {}),
-                                    "data": match.get("data", ""),
-                                },
+                if isinstance(data, dict):
+                    if "matches" in data and isinstance(data["matches"], list):
+                        for match in data["matches"]:
+                            parsed_entities.append(
+                                {
+                                    "type": "ip",
+                                    "value": str(match.get("ip_str", "") or "").strip(),
+                                    "source": "shodan",
+                                    "properties": {
+                                        "port": match.get("port"),
+                                        "org": match.get("org"),
+                                        "hostnames": match.get("hostnames", []),
+                                        "location": match.get("location", {}),
+                                        "data": match.get("data", ""),
+                                    },
+                                }
+                            )
+                    else:
+                        ip_val = str(data.get("ip_str", "") or data.get("ip", "") or "").strip()
+                        if ip_val:
+                            props = {
+                                "port": data.get("port"),
+                                "org": data.get("org"),
+                                "hostnames": data.get("hostnames", []),
+                                "location": data.get("location", {}),
+                                "data": data.get("data", ""),
                             }
-                        )
+                            parsed_entities.append({"type": "ip", "value": ip_val, "source": "shodan", "properties": props})
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse Shodan JSON output: {output[:100]}...")
+                import re
+                lines = (output or "").splitlines()
+                ip_regex = r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b"
+                ports = []
+                org = None
+                hostnames = []
+                ip_val = None
+                for raw in lines:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    if not ip_val:
+                        m = re.search(ip_regex, line)
+                        if m:
+                            ip_val = m.group(0)
+                    if "Org" in line or "Organization" in line:
+                        parts = line.split(":")
+                        if len(parts) >= 2:
+                            org = parts[1].strip()
+                    if "Hostnames" in line or "Hostname" in line:
+                        parts = line.split(":")
+                        if len(parts) >= 2:
+                            hostnames = [h.strip() for h in parts[1].split(",") if h.strip()]
+                    m_port = re.findall(r"\b(?:port|ports)\b[:\\s]*([0-9, ]+)", line, flags=re.IGNORECASE)
+                    if m_port:
+                        for grp in m_port:
+                            for p in grp.split(","):
+                                p = p.strip()
+                                if p.isdigit():
+                                    ports.append(int(p))
+                    m_inline = re.findall(r"\b([0-9]{1,5})/(?:tcp|udp)\b", line, flags=re.IGNORECASE)
+                    for p in m_inline:
+                        if p.isdigit():
+                            ports.append(int(p))
+                if ip_val:
+                    props = {}
+                    if ports:
+                        props["ports"] = sorted(list(set(ports)))
+                    if org:
+                        props["org"] = org
+                    if hostnames:
+                        props["hostnames"] = hostnames
+                    parsed_entities.append({"type": "ip", "value": ip_val, "source": "shodan", "properties": props})
+
+        elif tool_name == "subfinder":
+            for line in output.strip().split("\n"):
+                value = line.strip()
+                if not value:
+                    continue
+                parsed_entities.append(
+                    {
+                        "type": "domain",
+                        "value": value,
+                        "source": "subfinder",
+                    }
+                )
+
+        elif tool_name == "sherlock":
+            for raw_line in (output or "").splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if "http://" not in line and "https://" not in line:
+                    continue
+                cleaned = line.replace("[+]", "").replace("[*]", "").strip()
+                platform = None
+                url = None
+                if ": " in cleaned:
+                    left, right = cleaned.split(": ", 1)
+                    platform = left.strip() or None
+                    url = right.strip() or None
+                else:
+                    for part in cleaned.split():
+                        if part.startswith("http://") or part.startswith("https://"):
+                            url = part.strip()
+                            break
+                if not url:
+                    continue
+                entity = {"type": "social_media", "value": url, "source": "sherlock"}
+                if platform:
+                    entity["properties"] = {"platform": platform}
+                parsed_entities.append(entity)
 
         else:
             # Generic parser - try to extract domains, IPs, emails
@@ -319,19 +468,64 @@ def _process_transform_results(
 
     try:
         parsed_output = raw_results.get("parsed_output", [])
+        allowed_entity_types = {t[0] for t in Entity.ENTITY_TYPE_CHOICES}
+        
+        # Track processed entities in this batch to avoid duplicates
+        processed_in_batch = set()
 
         for entity_data in parsed_output:
+            raw_type = (entity_data.get("type") or "other").strip().lower()
+            raw_value = entity_data.get("value")
+            value = str(raw_value or "").strip()
+            if not value:
+                continue
+
+            entity_type = raw_type
+            if entity_type in {"subdomain", "hostname"}:
+                entity_type = "domain"
+            elif entity_type == "host":
+                entity_type = (
+                    "ip"
+                    if re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", value)
+                    else "domain"
+                )
+            elif entity_type.startswith("hash_"):
+                entity_type = "hash"
+
+            if entity_type not in allowed_entity_types:
+                entity_type = "other"
+
+            # Skip duplicates in the same batch
+            entity_key = (entity_type, value)
+            if entity_key in processed_in_batch:
+                continue
+            processed_in_batch.add(entity_key)
+
             # Create or get entity
-            entity, created = Entity.objects.get_or_create(
-                investigation=execution.investigation,
-                entity_type=entity_data["type"],
-                value=entity_data["value"],
-                defaults={
-                    "source": entity_data.get("source", transform.tool_name),
-                    "properties": entity_data.get("properties", {}),
-                    "confidence_score": 0.8,  # Default confidence for tool results
-                },
-            )
+            try:
+                entity, created = Entity.objects.get_or_create(
+                    investigation=execution.investigation,
+                    entity_type=entity_type,
+                    value=value,
+                    defaults={
+                        "source": entity_data.get("source", transform.tool_name),
+                        "properties": entity_data.get("properties", {}),
+                        "confidence_score": 0.8,
+                    },
+                )
+            except Exception as e:
+                # Handle race condition or integrity error explicitly
+                logger.warning(f"Error creating entity {entity_type}:{value} - {e}. Trying to get existing.")
+                try:
+                    entity = Entity.objects.get(
+                        investigation=execution.investigation,
+                        entity_type=entity_type,
+                        value=value
+                    )
+                    created = False
+                except Entity.DoesNotExist:
+                     logger.error(f"Failed to create or retrieve entity {entity_type}:{value}: {e}")
+                     continue
 
             if created:
                 entities_created += 1
@@ -394,7 +588,7 @@ def _determine_relationship_type(
     relationship_mappings = {
         ("domain", "domain"): "subdomain_of",
         ("domain", "ip"): "resolves_to",
-        ("ip", "domain"): "hosts",
+        ("ip", "domain"): "hosted_on",
         ("domain", "email"): "associated_with",
         ("ip", "ip"): "communicates_with",
     }

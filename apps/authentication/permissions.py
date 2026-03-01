@@ -13,7 +13,10 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
             return True
 
         # Write permissions are only allowed to the owner of the object.
-        return obj.created_by == request.user
+        owner = getattr(obj, "created_by", None)
+        if owner is None and hasattr(obj, "investigation"):
+            owner = getattr(getattr(obj, "investigation", None), "created_by", None)
+        return owner == request.user
 
 
 class HasAPIAccess(permissions.BasePermission):

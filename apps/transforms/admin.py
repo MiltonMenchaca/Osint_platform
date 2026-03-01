@@ -12,12 +12,11 @@ class TransformAdmin(admin.ModelAdmin):
         "category",
         "tool_name",
         "input_type",
+        "output_types",
         "is_enabled",
         "requires_api_key",
         "timeout",
         "usage_count"
-        # Temporarily commented out field that doesn't exist yet
-        # 'output_type'
     ]
     list_filter = [
         "category",
@@ -26,8 +25,6 @@ class TransformAdmin(admin.ModelAdmin):
         "is_enabled",
         "requires_api_key",
         "created_at"
-        # Temporarily commented out field that doesn't exist yet
-        # 'output_type'
     ]
     search_fields = ["name", "description", "tool_name", "command_template"]
     readonly_fields = ["id", "created_at", "updated_at", "usage_count"]
@@ -35,7 +32,7 @@ class TransformAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Basic Information",
-            {"fields": ("id", "name", "description", "category", "is_enabled")},
+            {"fields": ("id", "name", "display_name", "description", "category", "is_enabled")},
         ),
         (
             "Tool Configuration",
@@ -45,15 +42,14 @@ class TransformAdmin(admin.ModelAdmin):
                     "command_template",
                     "timeout",
                     "requires_api_key",
+                    "api_key_name",
                 )
             },
         ),
         (
             "Input/Output Types",
             {
-                "fields": ("input_type",)
-                # Temporarily commented out field that doesn't exist yet
-                # 'output_type'
+                "fields": ("input_type", "output_types")
             },
         ),
         ("Parameters", {"fields": ("parameters",), "classes": ("collapse",)}),
@@ -120,13 +116,13 @@ class TransformAdmin(admin.ModelAdmin):
 
         # Default command templates for common tools
         default_templates = {
-            "assetfinder": "assetfinder {input_value}",
-            "amass": "amass enum -d {input_value} -o /tmp/amass_output.txt && cat /tmp/amass_output.txt",
-            "nmap": "nmap -sS -O -A {input_value}",
-            "shodan": "shodan host {input_value}",
-            "whois": "whois {input_value}",
-            "dig": "dig {input_value} ANY",
-            "nslookup": "nslookup {input_value}",
+            "assetfinder": "assetfinder {input}",
+            "amass": "amass enum -d {input} -o /tmp/amass_output.txt && cat /tmp/amass_output.txt",
+            "nmap": "nmap -sS -O -A {input}",
+            "shodan": "shodan host {input}",
+            "whois": "whois {input}",
+            "dig": "dig {input} ANY",
+            "nslookup": "nslookup {input}",
         }
 
         for transform in queryset:
@@ -155,7 +151,7 @@ class TransformAdmin(admin.ModelAdmin):
         # Add help text for command template
         if "command_template" in form.base_fields:
             form.base_fields["command_template"].help_text = (
-                "Use {input_value} as placeholder for the input entity value. "
+                "Use {input} as placeholder for the input entity value. "
                 "Additional parameters can be referenced as {param_name}."
             )
 
@@ -171,10 +167,14 @@ class TransformAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         """Custom save logic"""
         # Validate command template
-        if "{input_value}" not in obj.command_template:
+        if (
+            "{input}" not in obj.command_template
+            and "{input_value}" not in obj.command_template
+            and "{target}" not in obj.command_template
+        ):
             self.message_user(
                 request,
-                "Warning: Command template should contain {input_value} placeholder.",
+                "Warning: Command template should contain {input} placeholder.",
                 level="WARNING",
             )
 

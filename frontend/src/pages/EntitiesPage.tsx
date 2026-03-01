@@ -1,23 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Button, Card, Table, Form, InputGroup, Badge, Dropdown, Pagination, Modal } from 'react-bootstrap';
+import { Container, Row, Col, Button, Card, Table, Form, InputGroup, Badge, Dropdown, Pagination, Modal, Alert } from 'react-bootstrap';
+import Swal from 'sweetalert2';
 import type { User, Entity } from '../types';
-import Header from '../components/Header';
+import Header from '../shared/components/Header';
 import { apiService } from '../services/api';
 
 interface EntitiesPageProps {
   user: User;
   onLogout: () => void;
-}
-
-interface BackendEntityListItem {
-  id: string;
-  entity_type: string;
-  value: string;
-  confidence_score?: number;
-  investigation_name?: string;
-  created_at?: string;
-  updated_at?: string;
-  relationships_count?: number;
 }
 
 const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
@@ -27,10 +17,31 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
   const [typeFilter, setTypeFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [investigationOptions, setInvestigationOptions] = useState<{ id: string; name: string }[]>([]);
+  const [formEntity, setFormEntity] = useState<{
+    investigationId: string;
+    name: string;
+    type: Entity['type'];
+    value: string;
+    description: string;
+    propertiesText: string;
+  }>({
+    investigationId: '',
+    name: '',
+    type: 'domain',
+    value: '',
+    description: '',
+    propertiesText: '{}',
+  });
   const itemsPerPage = 5;
 
   useEffect(() => {
     loadEntities();
+    loadInvestigations();
   }, []);
 
   useEffect(() => {
@@ -88,63 +99,174 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
   };
 
   const handleView = (entity: Entity) => {
-    console.log('Ver entidad:', entity.name);
+    const open = async () => {
+      const investigationId = entity.investigationId ?? (typeof entity.investigation === 'string' ? entity.investigation : undefined);
+      const res = await apiService.getEntity(entity.id, investigationId);
+      if (!res.success || !res.data) {
+        setPageError(res.message || 'No se pudo cargar la entidad.');
+        return;
+      }
+      setSelectedEntity(res.data);
+      setShowViewModal(true);
+    };
+    void open();
   };
 
   const handleEdit = (entity: Entity) => {
-    console.log('Editar entidad:', entity.name);
+    const investigationId = entity.investigationId ?? (typeof entity.investigation === 'string' ? entity.investigation : '');
+    setSelectedEntity(entity);
+    setFormEntity({
+      investigationId: investigationId || '',
+      name: entity.name || '',
+      type: entity.type,
+      value: entity.value || '',
+      description: entity.description || '',
+      propertiesText: JSON.stringify(entity.properties || {}, null, 2),
+    });
+    setShowEditModal(true);
   };
 
-  const handleDelete = (entity: Entity) => {
-    if (window.confirm(`¿Está seguro de que desea eliminar la entidad "${entity.name}"?`)) {
-      console.warn('Eliminar entidad desde la vista global no está soportado sin investigación asociada:', entity.id);
+  const handleDelete = async (entity: Entity) => {
+    const result = await Swal.fire({
+      title: '¿Estás seguro?',
+      text: `¿Está seguro de que desea eliminar la entidad "${entity.name}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+      const investigationId = entity.investigationId ?? (typeof entity.investigation === 'string' ? entity.investigation : undefined);
+      if (!investigationId) {
+        Swal.fire('Error', 'La entidad no tiene investigación asociada.', 'error');
+        return;
+      }
+      const res = await apiService.deleteEntity(entity.id, investigationId);
+      if (!res.success) {
+        Swal.fire('Error', res.message || 'No se pudo eliminar la entidad.', 'error');
+        return;
+      }
+      Swal.fire('¡Eliminado!', 'La entidad ha sido eliminada.', 'success');
+      await loadEntities();
     }
   };
 
   const loadEntities = async () => {
-    console.log('🔄 Cargando entidades...');
-
     try {
       const res = await apiService.getEntities();
       if (!res.success) {
-        console.error('💥 Error al cargar entidades:', res.message, res.errors);
         setEntities([]);
+        setPageError(res.message || 'No se pudieron cargar las entidades.');
         return;
       }
+      setEntities(res.data || []);
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : 'No se pudieron cargar las entidades.');
+    }
+  };
 
+  const loadInvestigations = async () => {
+    try {
+      const res = await apiService.getInvestigations();
+      if (!res.success) {
+        setInvestigationOptions([]);
+        return;
+      }
       const payload: any = res.data;
-      const items: BackendEntityListItem[] = Array.isArray(payload)
+      const items = Array.isArray(payload)
         ? payload
         : Array.isArray(payload?.results)
           ? payload.results
           : [];
-
-      const mapped: Entity[] = items.map((e) => {
-        const type = (e.entity_type || 'other') as Entity['type'];
-        return {
-          id: e.id,
-          name: e.value,
-          type,
-          description: '',
-          properties: {
-            confidence_score: e.confidence_score,
-            investigation_name: e.investigation_name,
-            relationships_count: e.relationships_count,
-          },
-          value: e.value,
-          created_at: e.created_at,
-          updated_at: e.updated_at,
-          createdAt: e.created_at,
-          updatedAt: e.updated_at,
-        };
-      });
-
-      setEntities(mapped);
-      console.log('✅ Entidades cargadas correctamente');
-      
-    } catch (err) {
-      console.error('💥 Error al cargar entidades:', err);
+      const mapped = items
+        .map((inv: any) => ({
+          id: String(inv?.id ?? ''),
+          name: String(inv?.name ?? inv?.title ?? 'Sin nombre'),
+        }))
+        .filter((inv: any) => inv.id);
+      setInvestigationOptions(mapped);
+    } catch {
+      setInvestigationOptions([]);
     }
+  };
+
+  const resetForm = () => {
+    setFormEntity({
+      investigationId: '',
+      name: '',
+      type: 'domain',
+      value: '',
+      description: '',
+      propertiesText: '{}',
+    });
+  };
+
+  const saveEntity = (mode: 'create' | 'edit') => {
+    const run = async () => {
+      setPageError(null);
+      const investigationId = formEntity.investigationId.trim();
+      if (!investigationId) {
+        setPageError('Seleccione una investigación.');
+        return;
+      }
+
+      let properties: Record<string, any> = {};
+      try {
+        properties = formEntity.propertiesText ? JSON.parse(formEntity.propertiesText) : {};
+      } catch {
+        setPageError('Propiedades debe ser un JSON válido.');
+        return;
+      }
+
+      const value = formEntity.value.trim() || formEntity.name.trim();
+      if (!value) {
+        setPageError('El valor o nombre de la entidad es obligatorio.');
+        return;
+      }
+
+      if (mode === 'create') {
+        const res = await apiService.createEntity(
+          {
+            name: formEntity.name.trim() || value,
+            type: formEntity.type,
+            value,
+            description: formEntity.description.trim(),
+            properties,
+          },
+          investigationId
+        );
+        if (!res.success) {
+          setPageError(res.message || 'No se pudo crear la entidad.');
+          return;
+        }
+        setShowModal(false);
+      } else if (selectedEntity) {
+        const res = await apiService.updateEntity(
+          selectedEntity.id,
+          {
+            name: formEntity.name.trim() || value,
+            type: formEntity.type,
+            value,
+            description: formEntity.description.trim(),
+            properties,
+          },
+          investigationId
+        );
+        if (!res.success) {
+          setPageError(res.message || 'No se pudo actualizar la entidad.');
+          return;
+        }
+        setShowEditModal(false);
+        setSelectedEntity(null);
+      }
+
+      resetForm();
+      await loadEntities();
+    };
+    void run();
   };
 
   return (
@@ -152,9 +274,18 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
       <Header user={user} onLogout={onLogout} />
 
       <Container fluid className="app-page py-4">
+        {pageError && (
+          <Row className="mb-3">
+            <Col>
+              <Alert variant="danger" className="mb-0">
+                {pageError}
+              </Alert>
+            </Col>
+          </Row>
+        )}
         <Row className="mb-4">
           <Col>
-            <h4 className="text-light mb-3">
+            <h4 className="mb-3">
               <i className="bi bi-diagram-3 me-2"></i>
               Entidades
             </h4>
@@ -164,37 +295,37 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
         {/* Estadísticas */}
         <Row className="mb-4">
           <Col md={3}>
-            <Card border="primary" className="text-center">
+            <Card className="text-center h-100">
               <Card.Body>
                 <i className="bi bi-diagram-3 text-primary" style={{ fontSize: '2rem' }}></i>
-                <h5 className="text-light mt-2">{entities.length}</h5>
+                <h5 className="mt-2">{entities.length}</h5>
                 <p className="text-muted mb-0">Total Entidades</p>
               </Card.Body>
             </Card>
           </Col>
           <Col md={3}>
-            <Card border="success" className="text-center">
+            <Card className="text-center h-100">
               <Card.Body>
                 <i className="bi bi-people text-success" style={{ fontSize: '2rem' }}></i>
-                <h5 className="text-light mt-2">{entities.filter(e => e.type === 'person').length}</h5>
+                <h5 className="mt-2">{entities.filter(e => e.type === 'person').length}</h5>
                 <p className="text-muted mb-0">Personas</p>
               </Card.Body>
             </Card>
           </Col>
           <Col md={3}>
-            <Card border="warning" className="text-center">
+            <Card className="text-center h-100">
               <Card.Body>
                 <i className="bi bi-building text-warning" style={{ fontSize: '2rem' }}></i>
-                <h5 className="text-light mt-2">{entities.filter(e => e.type === 'organization').length}</h5>
+                <h5 className="mt-2">{entities.filter(e => e.type === 'organization').length}</h5>
                 <p className="text-muted mb-0">Organizaciones</p>
               </Card.Body>
             </Card>
           </Col>
           <Col md={3}>
-            <Card border="info" className="text-center">
+            <Card className="text-center h-100">
               <Card.Body>
                 <i className="bi bi-globe text-info" style={{ fontSize: '2rem' }}></i>
-                <h5 className="text-light mt-2">{entities.filter(e => e.type === 'ip' || e.type === 'domain').length}</h5>
+                <h5 className="mt-2">{entities.filter(e => e.type === 'ip' || e.type === 'domain').length}</h5>
                 <p className="text-muted mb-0">Red/Dominios</p>
               </Card.Body>
             </Card>
@@ -204,12 +335,12 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
         {/* Filtros y Búsqueda */}
         <Row className="mb-4">
           <Col>
-            <Card bg="dark" border="secondary">
+            <Card>
               <Card.Body>
                 <Row className="g-3">
                   <Col md={4}>
                     <InputGroup>
-                      <InputGroup.Text className="bg-secondary border-secondary text-light">
+                      <InputGroup.Text>
                         <i className="bi bi-search"></i>
                       </InputGroup.Text>
                       <Form.Control
@@ -217,7 +348,6 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
                         placeholder="Buscar entidades..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="bg-dark border-secondary text-light"
                       />
                     </InputGroup>
                   </Col>
@@ -225,7 +355,6 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
                     <Form.Select
                       value={typeFilter}
                       onChange={(e) => setTypeFilter(e.target.value)}
-                      className="bg-dark border-secondary text-light"
                     >
                       <option value="all">Todos los tipos</option>
                       <option value="person">Persona</option>
@@ -236,7 +365,7 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
                     </Form.Select>
                   </Col>
                   <Col md={4}>
-                    <Button variant="primary" className="w-100" onClick={() => setShowModal(true)}>
+                    <Button variant="primary" className="w-100" onClick={() => { resetForm(); setShowModal(true); }}>
                       <i className="bi bi-plus-circle me-1"></i>
                       Nueva Entidad
                     </Button>
@@ -250,10 +379,10 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
         {/* Tabla de Entidades */}
         <Row>
           <Col>
-            <Card bg="dark" border="secondary">
+            <Card>
               <Card.Body className="p-0">
-                <Table responsive hover variant="dark" className="mb-0">
-                  <thead className="bg-secondary">
+                <Table responsive hover className="mb-0">
+                  <thead>
                     <tr>
                       <th>ID</th>
                       <th>Nombre</th>
@@ -342,70 +471,245 @@ const EntitiesPage: React.FC<EntitiesPageProps> = ({ user, onLogout }) => {
           </Row>
         )}
 
+        <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="lg" centered>
+          <Modal.Header closeButton>
+            <Modal.Title>
+              <i className="bi bi-eye me-2"></i>
+              Detalle de Entidad
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {selectedEntity && (
+              <div className="d-grid gap-3">
+                <div>
+                  <div className="text-secondary small">Nombre</div>
+                  <div>{selectedEntity.name}</div>
+                </div>
+                <div>
+                  <div className="text-secondary small">Tipo</div>
+                  <div>{getTypeText(selectedEntity.type)}</div>
+                </div>
+                <div>
+                  <div className="text-secondary small">Valor</div>
+                  <div>{selectedEntity.value || 'N/A'}</div>
+                </div>
+                <div>
+                  <div className="text-secondary small">Descripción</div>
+                  <div>{selectedEntity.description || 'Sin descripción'}</div>
+                </div>
+                <div>
+                  <div className="text-secondary small">Propiedades</div>
+                  <pre className="bg-dark rounded p-2 mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                    {JSON.stringify(selectedEntity.properties || {}, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowViewModal(false)}>
+              Cerrar
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
         {/* Modal para Nueva Entidad */}
         <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
-          <Modal.Header closeButton className="bg-dark border-secondary">
-            <Modal.Title className="text-light">
+          <Modal.Header closeButton>
+            <Modal.Title>
               <i className="bi bi-plus-circle me-2"></i>
               Nueva Entidad
             </Modal.Title>
           </Modal.Header>
-          <Modal.Body className="bg-dark">
+          <Modal.Body>
             <Form>
               <Row className="g-3">
                 <Col md={12}>
                   <Form.Group>
-                    <Form.Label className="text-light">Nombre</Form.Label>
+                    <Form.Label>Nombre</Form.Label>
                     <Form.Control
                       type="text"
                       placeholder="Ingrese el nombre de la entidad"
-                      className="bg-dark border-secondary text-light"
+                      value={formEntity.name}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, name: e.target.value }))}
                     />
                   </Form.Group>
                 </Col>
                 <Col md={6}>
                   <Form.Group>
-                    <Form.Label className="text-light">Tipo</Form.Label>
-                    <Form.Select className="bg-dark border-secondary text-light">
+                    <Form.Label>Tipo</Form.Label>
+                    <Form.Select
+                      value={formEntity.type}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, type: e.target.value as Entity['type'] }))}
+                    >
                       <option value="person">Persona</option>
                       <option value="organization">Organización</option>
                       <option value="ip">Dirección IP</option>
                       <option value="domain">Dominio</option>
                       <option value="email">Email</option>
+                      <option value="url">URL</option>
                     </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={6}>
                   <Form.Group>
-                    <Form.Label className="text-light">Estado</Form.Label>
-                    <Form.Select className="bg-dark border-secondary text-light">
-                      <option value="active">Activo</option>
-                      <option value="inactive">Inactivo</option>
-                      <option value="suspicious">Sospechoso</option>
+                    <Form.Label>Investigación</Form.Label>
+                    <Form.Select
+                      value={formEntity.investigationId}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, investigationId: e.target.value }))}
+                    >
+                      <option value="">Seleccionar investigación</option>
+                      {investigationOptions.map((inv) => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.name}
+                        </option>
+                      ))}
                     </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={12}>
                   <Form.Group>
-                    <Form.Label className="text-light">Descripción</Form.Label>
+                    <Form.Label>Valor</Form.Label>
+                    <Form.Control
+                      type="text"
+                      placeholder="ejemplo.com, 192.168.1.1, user@domain.com..."
+                      value={formEntity.value}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, value: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>Descripción</Form.Label>
                     <Form.Control
                       as="textarea"
                       rows={3}
                       placeholder="Describa la entidad y su relevancia"
-                      className="bg-dark border-secondary text-light"
+                      value={formEntity.description}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, description: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>Propiedades (JSON)</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={4}
+                      placeholder='{"source":"manual"}'
+                      value={formEntity.propertiesText}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, propertiesText: e.target.value }))}
                     />
                   </Form.Group>
                 </Col>
               </Row>
             </Form>
           </Modal.Body>
-          <Modal.Footer className="bg-dark border-secondary">
+          <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowModal(false)}>
               Cancelar
             </Button>
-            <Button variant="primary" onClick={() => setShowModal(false)}>
+            <Button variant="primary" onClick={() => saveEntity('create')}>
               <i className="bi bi-check-circle me-1"></i>
               Crear Entidad
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        <Modal show={showEditModal} onHide={() => setShowEditModal(false)} size="lg" centered>
+          <Modal.Header closeButton>
+            <Modal.Title>
+              <i className="bi bi-pencil me-2"></i>
+              Editar Entidad
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form>
+              <Row className="g-3">
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>Nombre</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={formEntity.name}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group>
+                    <Form.Label>Tipo</Form.Label>
+                    <Form.Select
+                      value={formEntity.type}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, type: e.target.value as Entity['type'] }))}
+                    >
+                      <option value="person">Persona</option>
+                      <option value="organization">Organización</option>
+                      <option value="ip">Dirección IP</option>
+                      <option value="domain">Dominio</option>
+                      <option value="email">Email</option>
+                      <option value="url">URL</option>
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group>
+                    <Form.Label>Investigación</Form.Label>
+                    <Form.Select
+                      value={formEntity.investigationId}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, investigationId: e.target.value }))}
+                    >
+                      <option value="">Seleccionar investigación</option>
+                      {investigationOptions.map((inv) => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.name}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>Valor</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={formEntity.value}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, value: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>Descripción</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={formEntity.description}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, description: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>Propiedades (JSON)</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={4}
+                      value={formEntity.propertiesText}
+                      onChange={(e) => setFormEntity(prev => ({ ...prev, propertiesText: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+            </Form>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowEditModal(false)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={() => saveEntity('edit')}>
+              <i className="bi bi-check-circle me-1"></i>
+              Guardar Cambios
             </Button>
           </Modal.Footer>
         </Modal>

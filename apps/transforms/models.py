@@ -135,15 +135,55 @@ class Transform(models.Model):
         if self.requires_api_key and self.api_key_name:
             import os
 
-            return bool(os.environ.get(self.api_key_name))
+            required_keys = [
+                key.strip() for key in self.api_key_name.split(",") if key.strip()
+            ]
+            return all(os.environ.get(key) for key in required_keys)
 
         return True
+
+    def check_availability(self):
+        import shutil
+
+        if not self.is_enabled:
+            return False, "Transform is disabled"
+
+        if self.requires_api_key and self.api_key_name:
+            import os
+
+            required_keys = [
+                key.strip() for key in self.api_key_name.split(",") if key.strip()
+            ]
+            missing = [key for key in required_keys if not os.environ.get(key)]
+            if missing:
+                return (
+                    False,
+                    f"Missing API key environment variable(s): {', '.join(missing)}",
+                )
+
+        if self.tool_name and self.tool_name not in {"custom"}:
+            wrapper_exists = False
+            try:
+                from apps.transforms.wrappers import get_wrapper
+
+                get_wrapper(self.tool_name)
+                wrapper_exists = True
+            except Exception:
+                wrapper_exists = False
+
+            if not wrapper_exists and shutil.which(self.tool_name) is None:
+                return False, f"Tool '{self.tool_name}' not found in PATH"
+
+        return True, "Available"
 
     def get_command(self, input_value, **kwargs):
         """Generate command for execution with given input"""
         # Replace placeholders in command template
         command = self.command_template
+        command = command.replace("{{input}}", str(input_value))
         command = command.replace("{input}", str(input_value))
+        command = command.replace("{input_value}", str(input_value))
+        command = command.replace("{target}", str(input_value))
 
         # Replace parameter placeholders
         for key, value in kwargs.items():

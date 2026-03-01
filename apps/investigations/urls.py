@@ -14,6 +14,21 @@ urlpatterns = [
         name="investigation-list-create",
     ),
     path(
+        "investigations/auto-recon/",
+        views.AutoReconView.as_view(),
+        name="auto-recon",
+    ),
+    path(
+        "investigations/osint-catalog/",
+        views.osint_catalog,
+        name="osint-catalog",
+    ),
+    path(
+        "investigations/<uuid:investigation_id>/execute-dorks/",
+        views.ExecuteDorksView.as_view(),
+        name="execute-dorks",
+    ),
+    path(
         "investigations/<uuid:pk>/",
         views.InvestigationDetailView.as_view(),
         name="investigation-detail",

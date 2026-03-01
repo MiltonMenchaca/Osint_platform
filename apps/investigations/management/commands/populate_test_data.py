@@ -27,9 +27,15 @@ class Command(BaseCommand):
                 "is_superuser": True,
             },
         )
+        admin_user.email = "admin@osint.com"
+        admin_user.first_name = "Admin"
+        admin_user.last_name = "User"
+        admin_user.is_staff = True
+        admin_user.is_superuser = True
+        admin_user.is_active = True
+        admin_user.set_password("admin123")
+        admin_user.save()
         if created:
-            admin_user.set_password("admin123")
-            admin_user.save()
             self.stdout.write(f"Created admin user: {admin_user.username}")
 
         # Create test investigations

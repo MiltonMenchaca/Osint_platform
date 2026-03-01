@@ -31,6 +31,8 @@ export interface Entity {
   properties: Record<string, any>;
   value?: string; // Agregado para compatibilidad con componentes
   investigation?: string; // Agregado para compatibilidad con EntityForm
+  investigationId?: string;
+  investigationName?: string;
   createdAt?: string; // Hecho opcional
   updatedAt?: string; // Hecho opcional
   created_at?: string; // Alias para compatibilidad con API
@@ -41,16 +43,19 @@ export interface Investigation {
   id: string;
   title: string;
   description: string;
-  status: 'active' | 'completed' | 'archived';
+  status: 'active' | 'completed' | 'paused' | 'archived';
   priority: 'low' | 'medium' | 'high' | 'critical';
   entities: Entity[];
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  target?: string;
+  tags?: string[];
   case_number?: string;
   jurisdiction?: string;
   estimated_loss?: string;
   victim_count?: number;
+  metadata?: Record<string, any>;
 }
 
 export interface ApiResponse<T> {
@@ -66,6 +71,29 @@ export interface DashboardStats {
   completedInvestigations: number;
   totalEntities: number;
   recentActivity: number;
+}
+
+export type TransformExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface TransformExecutionEntityRef {
+  id: string;
+  type: string;
+  value: string;
+}
+
+export interface TransformExecution {
+  id: string;
+  investigation_id?: string;
+  transform_name: string;
+  status: TransformExecutionStatus;
+  input_entity?: TransformExecutionEntityRef | null;
+  parameters?: Record<string, any>;
+  results?: Record<string, any>;
+  error_message?: string | null;
+  created_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  celery_task_id?: string;
 }
 
 // Interfaces para GraphView y componentes relacionados

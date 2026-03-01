@@ -13,7 +13,7 @@ El sistema está construido con una arquitectura moderna separando el frontend (
 ## 🚀 Características Principales
 
 - **Gestión de Investigaciones**: Crear, organizar y seguir casos de investigación.
-- **Entidades y Relaciones**: Modelado flexible de datos (Persona, Organización, Dominio, IP, Email, etc.).
+- **Entidades y Relaciones**: Modelado flexible de datos (Persona, Organización, Dominio, IP, Email, Puertos, Servicios, etc.).
 - **Visualización de Grafos**: Interfaz interactiva basada en Cytoscape.js para explorar conexiones.
 - **Herramientas OSINT Integradas**:
   - **Holehe**: Verificación de cuentas de correo en más de 120 sitios.
@@ -22,6 +22,7 @@ El sistema está construido con una arquitectura moderna separando el frontend (
   - **Nmap**: Escaneo de puertos y servicios.
   - **Shodan**: Búsqueda de dispositivos conectados (requiere API Key).
   - **crt.sh**: Búsqueda en logs de transparencia de certificados.
+  - **Auto Recon**: Suite rápida de reconocimiento (ping, whois, dns, wappalyzer, nmap).
 - **Arquitectura Data-Driven**: Enfoque en la calidad, normalización y accionabilidad de los datos.
 
 ## 🛠️ Tecnologías
@@ -39,13 +40,59 @@ El sistema está construido con una arquitectura moderna separando el frontend (
 - **Cytoscape.js** (visualización de grafos)
 - **Bootstrap 5** & **React-Bootstrap**
 
+## 🗂️ Estructura del repositorio
+
+- `apps/` Backend (Django apps)
+- `frontend/` Frontend (React/Vite)
+- `docs/` Documentación y figuras
+- `data/` Datos (raw/processed/external)
+- `outputs/` Resultados generados
+- `archives/` Archivos históricos y entregables
+
+```text
+osint/
+├─ apps/
+├─ config/
+├─ core/
+├─ data/
+│  ├─ raw/
+│  ├─ processed/
+│  └─ external/
+├─ docs/
+│  ├─ figures/
+│  └─ reports/
+├─ docker/
+├─ frontend/
+├─ osint_platform/
+├─ osint_tools/
+├─ outputs/
+├─ archives/
+├─ requirements/
+├─ scripts/
+├─ tests/
+├─ .env.example
+├─ .gitignore
+├─ README.md
+├─ manage.py
+└─ pytest.ini
+```
+
 ## 📦 Instalación y Despliegue
 
 ### Requisitos Previos
 - Python 3.12 o superior
 - Node.js 18 o superior
 - Redis (para Celery)
-- Herramientas OSINT instaladas en el sistema (nmap, amass, assetfinder, holehe)
+- Herramientas OSINT instaladas en el sistema:
+  - ping (iputils)
+  - whois
+  - nmap
+  - dnstwist
+  - httpx
+  - wappalyzer (python-Wappalyzer)
+  - holehe
+  - amass
+  - assetfinder
 
 ### Configuración del Backend
 
@@ -69,17 +116,22 @@ El sistema está construido con una arquitectura moderna separando el frontend (
    pip install -r requirements.txt
    ```
 
-4. **Configurar base de datos y migraciones**
+4. **Configurar variables de entorno**
+   ```bash
+   cp .env.example .env
+   ```
+
+5. **Configurar base de datos y migraciones**
    ```bash
    python manage.py migrate
    ```
 
-5. **Crear superusuario**
+6. **Crear superusuario**
    ```bash
    python manage.py createsuperuser
    ```
 
-6. **Iniciar servidor de desarrollo**
+7. **Iniciar servidor de desarrollo**
    ```bash
    python manage.py runserver
    ```
@@ -102,6 +154,18 @@ El sistema está construido con una arquitectura moderna separando el frontend (
    ```
 
 El frontend estará disponible en `http://localhost:5173` y el backend en `http://localhost:8000`.
+
+### Docker (Dev/Prod)
+
+- Archivos de Docker en `docker/`
+- Desarrollo:
+  ```bash
+  docker compose --env-file .env -f docker/docker-compose.yml up -d --build
+  ```
+- Producción:
+  ```bash
+  docker compose --env-file .env -f docker/docker-compose.prod.yml up -d --build
+  ```
 
 ## 🔧 Uso de OSINT Operativo (Scripts)
 

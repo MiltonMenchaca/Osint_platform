@@ -5,7 +5,9 @@ import os
 from . import base as base_settings
 
 BASE_DIR = base_settings.BASE_DIR
-SECRET_KEY = base_settings.SECRET_KEY
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set via environment in production")
 
 INSTALLED_APPS = list(base_settings.INSTALLED_APPS)
 MIDDLEWARE = list(base_settings.MIDDLEWARE)
@@ -31,7 +33,8 @@ MEDIA_ROOT = base_settings.MEDIA_ROOT
 DEFAULT_AUTO_FIELD = base_settings.DEFAULT_AUTO_FIELD
 
 REST_FRAMEWORK = base_settings.REST_FRAMEWORK
-SIMPLE_JWT = base_settings.SIMPLE_JWT
+SIMPLE_JWT = copy.deepcopy(base_settings.SIMPLE_JWT)
+SIMPLE_JWT["SIGNING_KEY"] = SECRET_KEY
 
 CORS_ALLOW_CREDENTIALS = base_settings.CORS_ALLOW_CREDENTIALS
 CORS_ALLOWED_HEADERS = base_settings.CORS_ALLOWED_HEADERS
@@ -53,7 +56,7 @@ CELERY_TASK_ROUTES = base_settings.CELERY_TASK_ROUTES
 
 LOGGING = copy.deepcopy(base_settings.LOGGING)
 
-DEBUG = False
+DEBUG = os.environ.get("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = [
     os.environ.get("ALLOWED_HOST", "osint-platform.com"),
@@ -70,10 +73,7 @@ DATABASES = {
         "PASSWORD": os.environ.get("DB_PASSWORD"),
         "HOST": os.environ.get("DB_HOST", "localhost"),
         "PORT": os.environ.get("DB_PORT", "5432"),
-        "OPTIONS": {
-            "MAX_CONNS": 20,
-            "CONN_MAX_AGE": 600,
-        },
+        "CONN_MAX_AGE": 600,
     }
 }
 
@@ -128,17 +128,34 @@ SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
-SECURE_HSTS_SECONDS = 31536000  # 1 year
-SECURE_SSL_REDIRECT = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "31536000"))
+SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "True") == "True"
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True") == "True"
+CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "True") == "True"
 X_FRAME_OPTIONS = "DENY"
 
 # CORS Settings for Production
 CORS_ALLOWED_ORIGINS = [
-    f"https://{os.environ.get('FRONTEND_HOST', 'osint-platform.com')}",
-    f"https://www.{os.environ.get('FRONTEND_HOST', 'osint-platform.com')}",
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
 ]
+if not CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS = [
+        f"https://{os.environ.get('FRONTEND_HOST', 'osint-platform.com')}",
+        f"https://www.{os.environ.get('FRONTEND_HOST', 'osint-platform.com')}",
+    ]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = [
+        f"https://{os.environ.get('FRONTEND_HOST', 'osint-platform.com')}",
+        f"https://www.{os.environ.get('FRONTEND_HOST', 'osint-platform.com')}",
+    ]
 
 CORS_ALLOW_CREDENTIALS = True
 

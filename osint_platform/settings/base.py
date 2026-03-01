@@ -209,6 +209,9 @@ CELERY_TASK_RESULT_EXPIRES = 3600
 
 # Celery Task Routing
 CELERY_TASK_ROUTES = {
+    "apps.investigations.tasks.execute_transform": {"queue": "transforms"},
+    "apps.investigations.tasks.cleanup_old_executions": {"queue": "maintenance"},
+    "apps.investigations.tasks.health_check": {"queue": "monitoring"},
     "apps.transforms.tasks.run_transform": {"queue": "transforms"},
     "apps.transforms.tasks.batch_transform": {"queue": "transforms"},
     "apps.transforms.tasks.cleanup_old_results": {"queue": "maintenance"},

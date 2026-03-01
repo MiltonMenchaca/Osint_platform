@@ -4,14 +4,13 @@ from urllib.parse import urlparse
 
 from rest_framework import serializers
 
-from apps.investigations.models import Investigation
-
 from .models import Entity, Relationship
 
 
 class EntityListSerializer(serializers.ModelSerializer):
     """Serializer for Entity list view"""
 
+    investigation_id = serializers.UUIDField(source="investigation.id", read_only=True)
     investigation_name = serializers.CharField(
         source="investigation.name", read_only=True
     )
@@ -21,6 +20,7 @@ class EntityListSerializer(serializers.ModelSerializer):
         model = Entity
         fields = [
             "id",
+            "investigation_id",
             "entity_type",
             "value",
             "confidence_score",
@@ -35,20 +35,26 @@ class EntityListSerializer(serializers.ModelSerializer):
 class EntityDetailSerializer(serializers.ModelSerializer):
     """Serializer for Entity detail view"""
 
+    investigation_id = serializers.UUIDField(source="investigation.id", read_only=True)
     investigation = serializers.StringRelatedField(read_only=True)
     source_relationships = serializers.SerializerMethodField()
     target_relationships = serializers.SerializerMethodField()
-    metadata = serializers.JSONField(required=False)
 
     class Meta:
         model = Entity
         fields = [
             "id",
+            "investigation_id",
             "investigation",
             "entity_type",
+            "display_name",
             "value",
+            "description",
             "confidence_score",
-            "metadata",
+            "properties",
+            "source",
+            "tags",
+            "is_seed",
             "created_at",
             "updated_at",
             "source_relationships",
@@ -70,55 +76,27 @@ class EntityDetailSerializer(serializers.ModelSerializer):
 class EntityCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating entities"""
 
-    investigation_id = serializers.IntegerField(write_only=True)
-
     class Meta:
         model = Entity
         fields = [
-            "investigation_id",
+            "id",
             "entity_type",
+            "display_name",
             "value",
+            "description",
             "confidence_score",
-            "metadata",
+            "properties",
+            "source",
+            "tags",
+            "is_seed",
         ]
-
-    def validate_investigation_id(self, value):
-        """Validate investigation exists and user has access"""
-        user = self.context["request"].user
-        if not Investigation.objects.filter(id=value, created_by=user).exists():
-            raise serializers.ValidationError(
-                "Investigation not found or you don't have access"
-            )
-        return value
 
     def validate_entity_type(self, value):
         """Validate entity type"""
-        valid_types = [
-            "domain",
-            "subdomain",
-            "ip",
-            "url",
-            "email",
-            "person",
-            "organization",
-            "phone",
-            "hash",
-            "vulnerability",
-            "port",
-            "service",
-            "certificate",
-            "asn",
-            "geolocation",
-            "malware",
-            "file",
-            "registry_key",
-            "process",
-            "network_connection",
-        ]
-
+        valid_types = {choice[0] for choice in Entity.ENTITY_TYPE_CHOICES}
         if value not in valid_types:
             raise serializers.ValidationError(
-                f"Invalid entity type. Must be one of: {', '.join(valid_types)}"
+                f"Invalid entity type. Must be one of: {', '.join(sorted(valid_types))}"
             )
 
         return value
@@ -159,20 +137,17 @@ class EntityCreateSerializer(serializers.ModelSerializer):
 
     def validate_confidence_score(self, value):
         """Validate confidence score"""
-        if not 0 <= value <= 100:
-            raise serializers.ValidationError(
-                "Confidence score must be between 0 and 100"
-            )
+        if value is None:
+            return value
+        if not 0.0 <= float(value) <= 1.0:
+            raise serializers.ValidationError("Confidence score must be between 0.0 and 1.0")
         return value
 
-    def validate_metadata(self, value):
-        """Validate metadata structure"""
+    def validate_properties(self, value):
         if value is None:
             return {}
-
         if not isinstance(value, dict):
-            raise serializers.ValidationError("Metadata must be a JSON object")
-
+            raise serializers.ValidationError("Properties must be a JSON object")
         return value
 
     def _is_valid_domain(self, value):
@@ -224,12 +199,6 @@ class EntityCreateSerializer(serializers.ModelSerializer):
 
         return False
 
-    def create(self, validated_data):
-        """Create entity with investigation"""
-        investigation_id = validated_data.pop("investigation_id")
-        validated_data["investigation"] = Investigation.objects.get(id=investigation_id)
-        return super().create(validated_data)
-
 
 class EntitySerializer(serializers.ModelSerializer):
     """Basic Entity serializer for nested use"""
@@ -270,7 +239,6 @@ class RelationshipDetailSerializer(serializers.ModelSerializer):
     source_entity = EntityDetailSerializer(read_only=True)
     target_entity = EntityDetailSerializer(read_only=True)
     investigation = serializers.StringRelatedField(read_only=True)
-    metadata = serializers.JSONField(required=False)
 
     class Meta:
         model = Relationship
@@ -280,8 +248,10 @@ class RelationshipDetailSerializer(serializers.ModelSerializer):
             "source_entity",
             "target_entity",
             "relationship_type",
+            "description",
             "confidence_score",
-            "metadata",
+            "properties",
+            "source",
             "created_at",
             "updated_at",
         ]
@@ -290,30 +260,20 @@ class RelationshipDetailSerializer(serializers.ModelSerializer):
 
 class RelationshipCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating relationships"""
-
-    investigation_id = serializers.IntegerField(write_only=True)
-    source_entity_id = serializers.IntegerField(write_only=True)
-    target_entity_id = serializers.IntegerField(write_only=True)
+    source_entity_id = serializers.UUIDField(write_only=True)
+    target_entity_id = serializers.UUIDField(write_only=True)
 
     class Meta:
         model = Relationship
         fields = [
-            "investigation_id",
             "source_entity_id",
             "target_entity_id",
             "relationship_type",
             "confidence_score",
-            "metadata",
+            "description",
+            "properties",
+            "source",
         ]
-
-    def validate_investigation_id(self, value):
-        """Validate investigation exists and user has access"""
-        user = self.context["request"].user
-        if not Investigation.objects.filter(id=value, created_by=user).exists():
-            raise serializers.ValidationError(
-                "Investigation not found or you don't have access"
-            )
-        return value
 
     def validate_source_entity_id(self, value):
         """Validate source entity exists"""
@@ -333,62 +293,33 @@ class RelationshipCreateSerializer(serializers.ModelSerializer):
 
     def validate_relationship_type(self, value):
         """Validate relationship type"""
-        valid_types = [
-            "subdomain_of",
-            "resolves_to",
-            "hosted_on",
-            "owns",
-            "manages",
-            "communicates_with",
-            "contains",
-            "part_of",
-            "similar_to",
-            "related_to",
-            "uses",
-            "provides",
-            "depends_on",
-            "connects_to",
-            "serves",
-            "accesses",
-            "controls",
-            "monitors",
-            "protects",
-        ]
-
+        valid_types = {choice[0] for choice in Relationship.RELATIONSHIP_TYPE_CHOICES}
         if value not in valid_types:
             raise serializers.ValidationError(
-                f"Invalid relationship type. Must be one of: {', '.join(valid_types)}"
+                f"Invalid relationship type. Must be one of: {', '.join(sorted(valid_types))}"
             )
 
         return value
 
     def validate_confidence_score(self, value):
         """Validate confidence score"""
-        if not 0 <= value <= 100:
-            raise serializers.ValidationError(
-                "Confidence score must be between 0 and 100"
-            )
+        if value is None:
+            return value
+        if not 0.0 <= float(value) <= 1.0:
+            raise serializers.ValidationError("Confidence score must be between 0.0 and 1.0")
+        return value
+
+    def validate_properties(self, value):
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Properties must be a JSON object")
         return value
 
     def validate(self, attrs):
         """Cross-field validation"""
-        # Check that source and target entities belong to the same investigation
-        investigation_id = attrs["investigation_id"]
         source_entity_id = attrs["source_entity_id"]
         target_entity_id = attrs["target_entity_id"]
-
-        source_entity = Entity.objects.get(id=source_entity_id)
-        target_entity = Entity.objects.get(id=target_entity_id)
-
-        if source_entity.investigation_id != investigation_id:
-            raise serializers.ValidationError(
-                "Source entity does not belong to the specified investigation"
-            )
-
-        if target_entity.investigation_id != investigation_id:
-            raise serializers.ValidationError(
-                "Target entity does not belong to the specified investigation"
-            )
 
         # Check for self-relationships
         if source_entity_id == target_entity_id:
@@ -397,23 +328,24 @@ class RelationshipCreateSerializer(serializers.ModelSerializer):
             )
 
         # Check for duplicate relationships
-        if Relationship.objects.filter(
-            investigation_id=investigation_id,
-            source_entity_id=source_entity_id,
-            target_entity_id=target_entity_id,
-            relationship_type=attrs["relationship_type"],
-        ).exists():
-            raise serializers.ValidationError("This relationship already exists")
+        investigation_id = self.context.get("view", None)
+        investigation_id = getattr(investigation_id, "kwargs", {}).get("investigation_id")
+        if investigation_id:
+            if Relationship.objects.filter(
+                investigation_id=investigation_id,
+                source_entity_id=source_entity_id,
+                target_entity_id=target_entity_id,
+                relationship_type=attrs["relationship_type"],
+            ).exists():
+                raise serializers.ValidationError("This relationship already exists")
 
         return attrs
 
     def create(self, validated_data):
         """Create relationship with entities and investigation"""
-        investigation_id = validated_data.pop("investigation_id")
         source_entity_id = validated_data.pop("source_entity_id")
         target_entity_id = validated_data.pop("target_entity_id")
 
-        validated_data["investigation"] = Investigation.objects.get(id=investigation_id)
         validated_data["source_entity"] = Entity.objects.get(id=source_entity_id)
         validated_data["target_entity"] = Entity.objects.get(id=target_entity_id)
 
@@ -462,24 +394,15 @@ class EntityStatsSerializer(serializers.Serializer):
 class BulkEntityCreateSerializer(serializers.Serializer):
     """Serializer for bulk entity creation"""
 
-    investigation_id = serializers.IntegerField()
     entities = serializers.ListField(
         child=serializers.DictField(), min_length=1, max_length=100
     )
-
-    def validate_investigation_id(self, value):
-        """Validate investigation exists and user has access"""
-        user = self.context["request"].user
-        if not Investigation.objects.filter(id=value, created_by=user).exists():
-            raise serializers.ValidationError(
-                "Investigation not found or you don't have access"
-            )
-        return value
 
     def validate_entities(self, value):
         """Validate entity data"""
         required_fields = ["entity_type", "value"]
 
+        valid_types = {choice[0] for choice in Entity.ENTITY_TYPE_CHOICES}
         for i, entity_data in enumerate(value):
             for field in required_fields:
                 if field not in entity_data:
@@ -489,25 +412,6 @@ class BulkEntityCreateSerializer(serializers.Serializer):
 
             # Validate entity type
             entity_type = entity_data.get("entity_type")
-            valid_types = [
-                "domain",
-                "subdomain",
-                "ip",
-                "url",
-                "email",
-                "person",
-                "organization",
-                "phone",
-                "hash",
-                "vulnerability",
-                "port",
-                "service",
-                "certificate",
-                "asn",
-                "geolocation",
-                "malware",
-            ]
-
             if entity_type not in valid_types:
                 raise serializers.ValidationError(
                     f"Entity {i+1}: Invalid entity type '{entity_type}'"
@@ -515,13 +419,20 @@ class BulkEntityCreateSerializer(serializers.Serializer):
 
             # Set default confidence score if not provided
             if "confidence_score" not in entity_data:
-                entity_data["confidence_score"] = 50
+                entity_data["confidence_score"] = 1.0
 
             # Validate confidence score
-            confidence = entity_data.get("confidence_score", 50)
-            if not 0 <= confidence <= 100:
+            confidence = entity_data.get("confidence_score", 1.0)
+            try:
+                confidence_value = float(confidence)
+            except (TypeError, ValueError):
                 raise serializers.ValidationError(
-                    f"Entity {i+1}: Confidence score must be between 0 and 100"
+                    f"Entity {i+1}: Confidence score must be a number"
                 )
+            if not 0.0 <= confidence_value <= 1.0:
+                raise serializers.ValidationError(
+                    f"Entity {i+1}: Confidence score must be between 0.0 and 1.0"
+                )
+            entity_data["confidence_score"] = confidence_value
 
         return value

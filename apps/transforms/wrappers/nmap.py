@@ -16,7 +16,7 @@ class NmapWrapper(BaseWrapper):
         return "nmap"
 
     def get_supported_input_types(self) -> List[str]:
-        return ["ip", "hostname", "cidr", "ip_range"]
+        return ["ip", "hostname", "cidr", "ip_range", "domain"]
 
     def get_supported_output_types(self) -> List[str]:
         return ["port", "service", "os", "vulnerability", "script_result"]
@@ -115,10 +115,12 @@ class NmapWrapper(BaseWrapper):
 
         # Port specification
         if ports and scan_type != "ping":
-            if ports == "top-1000":
-                command.append("--top-ports")
-                command.append("1000")
-            elif ports == "all":
+            normalized_ports = str(ports).strip().lower()
+            if normalized_ports in {"top-1000", "top1000"}:
+                command.extend(["--top-ports", "1000"])
+            elif normalized_ports in {"top-100", "top100"}:
+                command.extend(["--top-ports", "100"])
+            elif normalized_ports == "all":
                 command.extend(["-p", "1-65535"])
             else:
                 command.extend(["-p", ports])

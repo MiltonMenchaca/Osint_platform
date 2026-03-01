@@ -38,13 +38,30 @@ class HoleheWrapper(BaseWrapper):
         # Build command
         command = [self.tool_path]
 
-        # Add output format
-        if output_format == "json":
-            command.extend(["--output", "json"])
-
+        # Add output format (Holehe < 2.0 uses different flags, but we assume current)
+        # Check if the tool version supports --output json. 
+        # The error said: unrecognized arguments: --output test@gmail.com
+        # This implies it interpreted --output as a flag but maybe it requires a value or it doesn't exist.
+        # Wait, the error message `holehe: error: unrecognized arguments: --output test@gmail.com`
+        # suggests that --output is NOT recognized at all by this version of holehe.
+        # Or that it was parsed incorrectly.
+        
+        # Holehe usage: holehe [options] EMAIL
+        # Let's try without --output argument if it's failing.
+        # But we need JSON output.
+        # If --output is not supported, we might have to parse stdout.
+        # However, recent holehe supports it. Maybe the version in docker is old?
+        # Dockerfile installs `pip install ... holehe`. It should be latest.
+        # Let's check holehe help output in the error log: `usage: holehe [-h] [--only-used] [--no-color] [--no-clear] [-NP] [-C] [-T TIMEOUT] EMAIL [EMAIL ...]`
+        # Indeed, NO --output option in the help message!
+        # So we must remove it.
+        
         # Only show used accounts
         if only_used:
             command.append("--only-used")
+            
+        command.append("--no-color")
+        command.append("--no-clear")
 
         # Add email
         command.append(input_value)

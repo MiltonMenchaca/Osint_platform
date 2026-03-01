@@ -1,96 +1,110 @@
-import json
+import re
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+from rest_framework import permissions, status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+
+from apps.authentication.permissions import HasAPIAccess
+from apps.transforms.wrappers.base import ToolNotFoundError
+from apps.transforms.wrappers.holehe import HoleheWrapper
+from apps.transforms.wrappers.network_tools import PingWrapper
+from apps.transforms.wrappers.nmap import NmapWrapper
+from apps.transforms.wrappers.web_enum import DnsTwistWrapper, HttpxWrapper, WappalyzerWrapper, WhoisWrapper
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated, HasAPIAccess])
 def holehe_search(request):
-    """
-    Endpoint para ejecutar búsquedas con Holehe
-    """
-    try:
-        data = json.loads(request.body)
-        email = data.get("email")
-
-        if not email:
-            return JsonResponse({"error": "Email is required"}, status=400)
-
-        # Por ahora retornamos datos mock hasta que se instale holehe
-        # TODO: Implementar la llamada real a holehe cuando esté instalado
-        mock_results = {
-            "email": email,
-            "found_accounts": [
-                {
-                    "platform": "Twitter",
-                    "url": f'https://twitter.com/{email.split("@")[0]}',
-                    "status": "found",
-                    "confidence": "high",
-                },
-                {
-                    "platform": "Instagram",
-                    "url": f'https://instagram.com/{email.split("@")[0]}',
-                    "status": "found",
-                    "confidence": "medium",
-                },
-                {
-                    "platform": "Facebook",
-                    "url": "https://facebook.com",
-                    "status": "possible",
-                    "confidence": "low",
-                },
-                {
-                    "platform": "LinkedIn",
-                    "url": "https://linkedin.com",
-                    "status": "not_found",
-                    "confidence": "high",
-                },
-            ],
-            "total_found": 2,
-            "total_possible": 1,
-            "execution_time": "2.3s",
-        }
-
-        return JsonResponse({"success": True, "data": mock_results})
-
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON data"}, status=400)
-    except Exception as e:
-        return JsonResponse(
-            {"error": f"Internal server error: {str(e)}"},
-            status=500,
+    email = request.data.get("email")
+    if not email:
+        return Response(
+            {"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST
         )
 
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    if not re.match(email_pattern, email):
+        return Response(
+            {"error": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
+        )
 
-@csrf_exempt
-@require_http_methods(["GET"])
+    timeout = request.data.get("timeout", 300)
+    only_used = request.data.get("only_used", True)
+
+    wrapper = HoleheWrapper()
+    result = wrapper.execute(
+        {"type": "email", "value": email}, timeout=timeout, only_used=only_used
+    )
+
+    results = result.get("results", [])
+    metadata = result.get("metadata", {})
+
+    return Response(
+        {
+            "success": True,
+            "email": email,
+            "tool": result.get("tool"),
+            "input_type": result.get("input_type"),
+            "input_value": result.get("input_value"),
+            "results": results,
+            "metadata": metadata,
+            "accounts_found": metadata.get("accounts_found", len(results)),
+            "execution_time": metadata.get("execution_time", 0) or 0,
+            "total_platforms_checked": metadata.get("total_platforms_checked", 0) or 0,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, HasAPIAccess])
 def holehe_status(request):
-    """
-    Endpoint para verificar el estado de Holehe
-    """
     try:
-        # Verificar si holehe está instalado
-        # Por ahora retornamos que está disponible como mock
-        return JsonResponse(
+        wrapper = HoleheWrapper()
+    except ToolNotFoundError:
+        return Response(
             {
                 "success": True,
-                "data": {"installed": True, "version": "1.60.0", "status": "ready"},
+                "data": {"installed": False, "version": None, "status": "missing"},
             }
         )
-    except Exception as e:
-        return JsonResponse(
-            {"error": f"Error checking Holehe status: {str(e)}"}, status=500
-        )
+
+    tool_info = wrapper.get_tool_info()
+    return Response(
+        {
+            "success": True,
+            "data": {
+                "installed": bool(tool_info.get("available")),
+                "version": tool_info.get("version"),
+                "status": "ready" if tool_info.get("available") else "missing",
+            },
+        }
+    )
 
 
-def _execute_holehe(email):
-    """
-    Función privada para ejecutar holehe (implementación futura)
-    """
-    # TODO: Implementar la ejecución real de holehe
-    # comando = ['holehe', email, '--only-used']
-    # result = subprocess.run(comando, capture_output=True, text=True)
-    # return result
-    pass
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, HasAPIAccess])
+def tools_status(request):
+    tools = {
+        "ping": PingWrapper,
+        "whois": WhoisWrapper,
+        "dnstwist": DnsTwistWrapper,
+        "httpx": HttpxWrapper,
+        "wappalyzer": WappalyzerWrapper,
+        "nmap": NmapWrapper,
+    }
+
+    data = {}
+    for name, wrapper_cls in tools.items():
+        try:
+            wrapper = wrapper_cls()
+            info = wrapper.get_tool_info()
+            data[name] = {
+                "installed": bool(info.get("available")),
+                "version": info.get("version"),
+                "status": "ready" if info.get("available") else "missing",
+            }
+        except ToolNotFoundError:
+            data[name] = {"installed": False, "version": None, "status": "missing"}
+        except Exception as e:
+            data[name] = {"installed": False, "version": None, "status": f"error: {e}"}
+
+    return Response({"success": True, "data": data})
