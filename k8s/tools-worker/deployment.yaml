@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: osint-worker
+  namespace: osint-platform
+  labels:
+    app: osint-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: osint-worker
+  template:
+    metadata:
+      labels:
+        app: osint-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/OWNER/osint/tools-worker:latest
+          command:
+            - celery
+            - -A
+            - osint_platform.celery_app:app
+            - worker
+            - -l
+            - info
+            - -Q
+            - transforms,maintenance,monitoring
+          envFrom:
+            - configMapRef:
+                name: osint-config
+            - secretRef:
+                name: osint-secrets
+          env:
+            - name: OSINT_TOOLS_DIR
+              value: /tmp
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi

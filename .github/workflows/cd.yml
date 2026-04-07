@@ -1,0 +1,132 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+  HELM_RELEASE: osint-platform
+  K8S_NAMESPACE: osint-platform
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build & push production images
+  # ──────────────────────────────────────────────
+  build-and-push:
+    name: Build Production Images
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=sha-$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/backend:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.frontend-prod
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push tools-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.tools-worker
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tools-worker:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tools-worker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ──────────────────────────────────────────────
+  # Job 2: Deploy to Kubernetes with Helm
+  # ──────────────────────────────────────────────
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Create namespace
+        run: kubectl create namespace ${{ env.K8S_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE }} \
+            ./helm/osint-platform \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            -f ./helm/osint-platform/values-prod.yaml \
+            --set backend.image.tag=${{ needs.build-and-push.outputs.image_tag }} \
+            --set frontend.image.tag=${{ needs.build-and-push.outputs.image_tag }} \
+            --set worker.image.tag=${{ needs.build-and-push.outputs.image_tag }} \
+            --set secrets.secretKey=${{ secrets.SECRET_KEY }} \
+            --set secrets.dbPassword=${{ secrets.DB_PASSWORD }} \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment/osint-backend --timeout=120s
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment/osint-frontend --timeout=120s
+          kubectl -n ${{ env.K8S_NAMESPACE }} get pods

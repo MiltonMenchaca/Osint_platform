@@ -1,0 +1,117 @@
+# ──────────────────────────────────────────────
+# OSINT Platform - Default Values
+# ──────────────────────────────────────────────
+
+namespace: osint-platform
+
+# ── Backend (Django) ────────────────────────
+backend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/OWNER/osint/backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  env:
+    DJANGO_SETTINGS_MODULE: osint_platform.settings.production
+    DEBUG: "False"
+    ALLOWED_HOST: "*"
+
+# ── Frontend (Nginx + React) ───────────────
+frontend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/OWNER/osint/frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ── Tools Worker (Celery) ──────────────────
+worker:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/OWNER/osint/tools-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  celeryQueues: transforms,maintenance,monitoring
+
+# ── PostgreSQL ─────────────────────────────
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+  service:
+    port: 5432
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── Redis ──────────────────────────────────
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+  service:
+    port: 6379
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ── Database Config ────────────────────────
+database:
+  name: osint_platform
+  user: osint_user
+  host: ""  # auto-resolved to postgresql service name
+  port: "5432"
+
+# ── Secrets (override via --set or values file) ─
+secrets:
+  secretKey: change-me-in-production
+  dbPassword: change_me
+
+# ── Ingress ────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  host: osint.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  tls: []

@@ -34,7 +34,7 @@ El sistema está construido con una arquitectura moderna separando el frontend (
 - **PostgreSQL** (recomendado para producción) / SQLite (desarrollo)
 
 ### Frontend
-- **React 18**
+- **React 19**
 - **TypeScript**
 - **Vite**
 - **Cytoscape.js** (visualización de grafos)
@@ -181,6 +181,111 @@ El proyecto incluye un módulo `osint_operativo` para ejecutar campañas OSINT a
 
 3. **Revisar reportes**
    Los resultados se guardan en `osint_operativo/reportes/` en formatos JSON, TXT y DOCX.
+
+---
+
+## 🔄 DevOps — CI/CD Pipeline
+
+El proyecto implementa un flujo DevOps completo con Integración Continua y Despliegue Continuo.
+
+### Arquitectura del Pipeline
+
+```
+Push/PR → GitHub Actions CI → Tests + Lint + Build Docker → Push a ghcr.io → Helm Deploy a K8s
+```
+
+### Integración Continua (CI)
+
+El workflow `.github/workflows/ci.yml` se ejecuta en cada push/PR a `main` y `develop`:
+
+| Job | Descripción |
+|-----|------------|
+| **backend-tests** | Python 3.11 + PostgreSQL 16 + Redis 7 → flake8, black --check, pytest --cov |
+| **frontend-build** | Node 20 → npm ci, eslint, vite build |
+| **docker-build** | Build y push de 3 imágenes a GitHub Container Registry (ghcr.io) |
+
+### Despliegue Continuo (CD)
+
+El workflow `.github/workflows/cd.yml` se ejecuta al hacer merge a `main`:
+
+1. Construye imágenes Docker con tag de versión
+2. Despliega a Kubernetes con `helm upgrade --install`
+3. Verifica rollout de deployments
+
+### Kubernetes
+
+Manifiestos en `k8s/` para despliegue directo:
+
+```bash
+# Aplicar todos los manifiestos
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/ -R
+```
+
+**Servicios desplegados**: PostgreSQL, Redis, Backend (Django), Frontend (Nginx), Tools Worker (Celery)
+
+### Helm Chart
+
+Chart en `helm/osint-platform/` para administración del despliegue:
+
+```bash
+# Desarrollo (minikube/kind)
+helm install osint ./helm/osint-platform -f helm/osint-platform/values-dev.yaml
+
+# Producción
+helm install osint ./helm/osint-platform -f helm/osint-platform/values-prod.yaml
+
+# Actualizar despliegue
+helm upgrade osint ./helm/osint-platform --set backend.image.tag=v1.2.0
+
+# Verificar
+helm list
+kubectl get pods -n osint-platform
+```
+
+### Despliegue Local con Minikube
+
+```bash
+# Iniciar minikube
+minikube start --driver=docker
+
+# Habilitar ingress
+minikube addons enable ingress
+
+# Instalar con Helm
+helm install osint ./helm/osint-platform -f helm/osint-platform/values-dev.yaml
+
+# Agregar al /etc/hosts (o C:\Windows\System32\drivers\etc\hosts)
+echo "$(minikube ip) osint.local" | sudo tee -a /etc/hosts
+
+# Acceder: http://osint.local
+```
+
+### Estructura DevOps
+
+```text
+.github/workflows/
+├── ci.yml                    # Pipeline CI: tests, lint, Docker build
+└── cd.yml                    # Pipeline CD: deploy a Kubernetes
+
+k8s/
+├── namespace.yaml
+├── ingress.yaml
+├── backend/                  # Deployment, Service, ConfigMap, Secret
+├── frontend/                 # Deployment, Service
+├── postgres/                 # Deployment, Service, PVC
+├── redis/                    # Deployment, Service
+└── tools-worker/             # Deployment
+
+helm/osint-platform/
+├── Chart.yaml
+├── values.yaml               # Valores por defecto
+├── values-dev.yaml            # Override desarrollo
+├── values-prod.yaml           # Override producción
+└── templates/                 # Templates parametrizables
+```
+
+---
 
 ## 🤝 Contribución
 

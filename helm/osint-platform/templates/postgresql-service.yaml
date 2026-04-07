@@ -1,0 +1,16 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-postgresql
+  labels:
+    {{- include "osint.labels" . | nindent 4 }}
+    {{- include "osint.postgresql.selectorLabels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "osint.postgresql.selectorLabels" . | nindent 4 }}
+  ports:
+    - port: {{ .Values.postgresql.service.port }}
+      targetPort: 5432
+  type: ClusterIP
+{{- end }}

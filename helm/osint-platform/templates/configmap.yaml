@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "osint.labels" . | nindent 4 }}
+data:
+  DJANGO_SETTINGS_MODULE: {{ .Values.backend.env.DJANGO_SETTINGS_MODULE | quote }}
+  DEBUG: {{ .Values.backend.env.DEBUG | quote }}
+  ALLOWED_HOST: {{ .Values.backend.env.ALLOWED_HOST | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  DB_USER: {{ .Values.database.user | quote }}
+  DB_HOST: {{ include "osint.databaseHost" . | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  REDIS_HOST: {{ .Release.Name }}-redis
+  REDIS_PORT: {{ .Values.redis.service.port | quote }}
+  REDIS_URL: redis://{{ .Release.Name }}-redis:{{ .Values.redis.service.port }}

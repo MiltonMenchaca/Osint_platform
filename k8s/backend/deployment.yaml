@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: osint-backend
+  namespace: osint-platform
+  labels:
+    app: osint-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: osint-backend
+  template:
+    metadata:
+      labels:
+        app: osint-backend
+    spec:
+      initContainers:
+        - name: migrate
+          image: ghcr.io/OWNER/osint/backend:latest
+          command: ["python", "manage.py", "migrate", "--noinput"]
+          envFrom:
+            - configMapRef:
+                name: osint-config
+            - secretRef:
+                name: osint-secrets
+      containers:
+        - name: backend
+          image: ghcr.io/OWNER/osint/backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: osint-config
+            - secretRef:
+                name: osint-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health/
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health/
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30

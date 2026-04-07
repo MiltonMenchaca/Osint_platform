@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: osint-config
+  namespace: osint-platform
+data:
+  DJANGO_SETTINGS_MODULE: osint_platform.settings.production
+  DB_NAME: osint_platform
+  DB_USER: osint_user
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_URL: redis://redis:6379
+  ALLOWED_HOST: "*"
+  DEBUG: "False"

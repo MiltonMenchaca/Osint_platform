@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels:
+    {{- include "osint.labels" . | nindent 4 }}
+    {{- include "osint.worker.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "osint.worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "osint.worker.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - osint_platform.celery_app:app
+            - worker
+            - -l
+            - info
+            - -Q
+            - {{ .Values.worker.celeryQueues }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          env:
+            - name: OSINT_TOOLS_DIR
+              value: /tmp
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

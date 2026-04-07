@@ -1,0 +1,14 @@
+apiVersion: v2
+name: osint-platform
+description: Helm chart for OSINT Platform - Cybersecurity investigation tool
+version: 0.1.0
+appVersion: "1.0.0"
+type: application
+keywords:
+  - osint
+  - cybersecurity
+  - django
+  - react
+  - celery
+maintainers:
+  - name: OSINT Platform Team

@@ -1,0 +1,21 @@
+# Development overrides — single replicas, no TLS
+backend:
+  replicaCount: 1
+  env:
+    DJANGO_SETTINGS_MODULE: osint_platform.settings.development
+    DEBUG: "True"
+
+frontend:
+  replicaCount: 1
+
+worker:
+  replicaCount: 1
+
+postgresql:
+  persistence:
+    size: 2Gi
+
+ingress:
+  enabled: true
+  host: osint.local
+  tls: []

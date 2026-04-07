@@ -1,0 +1,47 @@
+# Production overrides — more replicas, higher resources
+backend:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+  env:
+    DJANGO_SETTINGS_MODULE: osint_platform.settings.production
+    DEBUG: "False"
+
+frontend:
+  replicaCount: 2
+
+worker:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+postgresql:
+  persistence:
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+ingress:
+  enabled: true
+  host: osint.example.com
+  tls: []
+  # Uncomment for TLS:
+  # tls:
+  #   - secretName: osint-tls
+  #     hosts:
+  #       - osint.example.com

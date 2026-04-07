@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: osint-frontend
+  namespace: osint-platform
+  labels:
+    app: osint-frontend
+spec:
+  selector:
+    app: osint-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP
