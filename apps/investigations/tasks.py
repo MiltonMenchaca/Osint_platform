@@ -172,7 +172,7 @@ def _execute_osint_tool(
         command = transform.get_command(input_value, **parameters)
 
         logger.info(f"Executing command: {command}")
-        
+
         import tempfile
         cwd = getattr(settings, "OSINT_TOOLS_DIR", tempfile.gettempdir())
 
@@ -323,7 +323,10 @@ def _parse_tool_output(tool_name: str, output: str) -> List[Dict[str, Any]]:
                                 "location": data.get("location", {}),
                                 "data": data.get("data", ""),
                             }
-                            parsed_entities.append({"type": "ip", "value": ip_val, "source": "shodan", "properties": props})
+                            parsed_entities.append({
+                                "type": "ip", "value": ip_val,
+                                "source": "shodan", "properties": props,
+                            })
             except json.JSONDecodeError:
                 import re
                 lines = (output or "").splitlines()
@@ -469,7 +472,7 @@ def _process_transform_results(
     try:
         parsed_output = raw_results.get("parsed_output", [])
         allowed_entity_types = {t[0] for t in Entity.ENTITY_TYPE_CHOICES}
-        
+
         # Track processed entities in this batch to avoid duplicates
         processed_in_batch = set()
 
@@ -524,8 +527,10 @@ def _process_transform_results(
                     )
                     created = False
                 except Entity.DoesNotExist:
-                     logger.error(f"Failed to create or retrieve entity {entity_type}:{value}: {e}")
-                     continue
+                    logger.error(
+                        f"Failed to create or retrieve entity {entity_type}:{value}: {e}"
+                    )
+                    continue
 
             if created:
                 entities_created += 1

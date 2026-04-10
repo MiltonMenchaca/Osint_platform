@@ -1,8 +1,9 @@
 import shutil
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from apps.transforms.models import Transform
 from apps.transforms.wrappers import list_available_tools
+
 
 class OsintCatalogService:
     def __init__(self) -> None:
@@ -55,7 +56,10 @@ class OsintCatalogService:
             {
                 "category": "Configuración y secretos",
                 "name": "Archivos de configuración",
-                "query": "site:{target} (config OR settings OR secrets OR credentials) (json OR yml OR yaml OR env OR ini)",
+                "query": (
+                    "site:{target} (config OR settings OR secrets OR credentials)"
+                    " (json OR yml OR yaml OR env OR ini)"
+                ),
                 "intent": "Ubicar archivos de configuración con credenciales.",
                 "risk": "Filtración de secretos.",
             },
@@ -69,21 +73,30 @@ class OsintCatalogService:
             {
                 "category": "Configuración y secretos",
                 "name": "Credenciales en texto",
-                "query": "site:{target} (password OR passwd OR token OR secret OR api_key OR \"access key\")",
+                "query": (
+                    "site:{target} (password OR passwd OR token OR secret"
+                    " OR api_key OR \"access key\")"
+                ),
                 "intent": "Identificar páginas con credenciales visibles.",
                 "risk": "Acceso no autorizado.",
             },
             {
                 "category": "Documentos sensibles",
                 "name": "Documentos internos",
-                "query": "site:{target} (confidencial OR interno OR \"uso interno\") (pdf OR doc OR docx OR xls OR xlsx OR ppt OR pptx)",
+                "query": (
+                    "site:{target} (confidencial OR interno OR \"uso interno\")"
+                    " (pdf OR doc OR docx OR xls OR xlsx OR ppt OR pptx)"
+                ),
                 "intent": "Detectar documentos internos expuestos.",
                 "risk": "Divulgación de información.",
             },
             {
                 "category": "Documentos sensibles",
                 "name": "Documentación técnica",
-                "query": "site:{target} (manual OR arquitectura OR \"guía\" OR \"política\") (pdf OR doc OR docx OR ppt OR pptx)",
+                "query": (
+                    "site:{target} (manual OR arquitectura OR \"guía\" OR \"política\")"
+                    " (pdf OR doc OR docx OR ppt OR pptx)"
+                ),
                 "intent": "Localizar documentación técnica.",
                 "risk": "Información útil para ataque.",
             },
@@ -125,7 +138,10 @@ class OsintCatalogService:
             {
                 "category": "Documentos sensibles",
                 "name": "Plantillas y formularios",
-                "query": "site:{target} (filetype:docm OR filetype:xlt OR filetype:xltx OR filetype:dot OR filetype:dotx)",
+                "query": (
+                    "site:{target} (filetype:docm OR filetype:xlt OR filetype:xltx"
+                    " OR filetype:dot OR filetype:dotx)"
+                ),
                 "intent": "Identificar plantillas usadas internamente.",
                 "risk": "Divulgación de formatos internos.",
             },
@@ -251,7 +267,11 @@ class OsintCatalogService:
             {
                 "category": "Metadatos",
                 "name": "Documentos con metadatos",
-                "query": "site:{target} (filetype:pdf OR filetype:doc OR filetype:docx OR filetype:xls OR filetype:xlsx OR filetype:ppt OR filetype:pptx OR filetype:odt OR filetype:ods OR filetype:odp)",
+                "query": (
+                    "site:{target} (filetype:pdf OR filetype:doc OR filetype:docx"
+                    " OR filetype:xls OR filetype:xlsx OR filetype:ppt OR filetype:pptx"
+                    " OR filetype:odt OR filetype:ods OR filetype:odp)"
+                ),
                 "intent": "Identificar documentos para análisis de metadatos.",
                 "risk": "Filtración de autores y rutas.",
             },

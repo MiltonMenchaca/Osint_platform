@@ -787,7 +787,10 @@ def import_transforms(request):
 
     return Response(
         {
-            "message": f"Import completed. {results['imported']} imported, {results['updated']} updated, {results['skipped']} skipped.",
+            "message": (
+                f"Import completed. {results['imported']} imported,"
+                f" {results['updated']} updated, {results['skipped']} skipped."
+            ),
             "results": results,
         }
     )

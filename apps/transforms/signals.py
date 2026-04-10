@@ -110,7 +110,8 @@ def _validate_transform_configuration(transform):
             logger.error(f"Transform '{transform.name}' has empty command template")
             return False
 
-        if not any(placeholder in transform.command_template for placeholder in ["{input_value}", "{target}", "{input}", "{{input}}"]):
+        if not any(placeholder in transform.command_template
+                   for placeholder in ["{input_value}", "{target}", "{input}", "{{input}}"]):
             logger.warning(
                 f"Transform '{transform.name}' command template missing input placeholder ({{input_value}} or {{target}})"
             )
@@ -166,13 +167,13 @@ def _validate_transform_configuration(transform):
             )
 
         if hasattr(transform, 'output_types') and isinstance(transform.output_types, list):
-             for output_type in transform.output_types:
+            for output_type in transform.output_types:
                 if output_type not in valid_types:
                     logger.warning(
                         f"Transform '{transform.name}' has unknown output type: {output_type}"
                     )
-        elif hasattr(transform, 'output_type'): # Legacy check
-             if transform.output_type not in valid_types:
+        elif hasattr(transform, 'output_type'):  # Legacy check
+            if transform.output_type not in valid_types:
                 logger.warning(
                     f"Transform '{transform.name}' has unknown output type: {transform.output_type}"
                 )

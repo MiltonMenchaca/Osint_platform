@@ -164,7 +164,7 @@ class EntityListCreateView(generics.ListCreateAPIView):
             if new_properties:
                 existing_entity.properties.update(new_properties)
                 existing_entity.save()
-            
+
             # Serialize the existing entity
             response_serializer = EntityListSerializer(existing_entity)
             return Response(response_serializer.data, status=status.HTTP_200_OK)
@@ -176,8 +176,8 @@ class EntityListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         """Set the investigation for the entity"""
         investigation_id = self.kwargs.get("investigation_id")
-        
-        # We fetch investigation again here or could pass it if we refactored, 
+
+        # We fetch investigation again here or could pass it if we refactored,
         # but for safety let's just get it (cached by DB query usually)
         investigation = get_object_or_404(
             Investigation, id=investigation_id, created_by=self.request.user
@@ -238,7 +238,8 @@ class EntityDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_destroy(self, instance):
         """Log entity deletion"""
         logger.info(
-            f"Entity '{instance.display_name or instance.value}' deleted from investigation {instance.investigation.name}"
+            f"Entity '{instance.display_name or instance.value}' deleted"
+            f" from investigation {instance.investigation.name}"
         )
 
         # Clear caches
@@ -412,7 +413,8 @@ class RelationshipDetailView(generics.RetrieveUpdateDestroyAPIView):
         relationship = serializer.save()
 
         logger.info(
-            f"Relationship '{relationship.relationship_type}' updated in investigation {relationship.investigation.name}"
+            f"Relationship '{relationship.relationship_type}' updated"
+            f" in investigation {relationship.investigation.name}"
         )
 
         # Clear caches

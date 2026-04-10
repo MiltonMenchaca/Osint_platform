@@ -42,14 +42,20 @@ class Command(BaseCommand):
         investigations_data = [
             {
                 "name": "Investigación de Fraude Financiero",
-                "description": "Análisis detallado de transacciones sospechosas en cuentas corporativas de la empresa XYZ.",
+                "description": (
+                    "Análisis detallado de transacciones sospechosas en"
+                    " cuentas corporativas de la empresa XYZ."
+                ),
                 "status": "active",
                 "tags": ["fraude", "financiero", "corporativo"],
                 "metadata": {"target": "Empresa XYZ S.A.", "priority": "high"},
             },
             {
                 "name": "Análisis de Red Social",
-                "description": "Mapeo de conexiones y relaciones en redes sociales para identificar patrones de comportamiento.",
+                "description": (
+                    "Mapeo de conexiones y relaciones en redes sociales"
+                    " para identificar patrones de comportamiento."
+                ),
                 "status": "completed",
                 "tags": ["social_media", "redes_sociales"],
                 "metadata": {"target": "Perfil @suspicious_user", "priority": "medium"},

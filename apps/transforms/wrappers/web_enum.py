@@ -560,7 +560,7 @@ class NiktoWrapper(BaseWrapper):
         # Nikto needs host (IP or domain) usually, or URL
         # If URL, stripped protocol often preferred but -h handles url too.
 
-        timeout = int(kwargs.get("timeout", 1200)) # Nikto is slow
+        timeout = int(kwargs.get("timeout", 1200))  # Nikto is slow
 
         temp_dir = self._create_temp_dir()
         output_file = os.path.join(temp_dir, "nikto_results.json")
@@ -1049,7 +1049,7 @@ class ReconNgWrapper(BaseWrapper):
             "modules load reporting/json",
             f"options set FILENAME {output_file}",
             "run",
-            "workspaces remove", # Removes current workspace
+            "workspaces remove",  # Removes current workspace
             "exit"
         ]
 

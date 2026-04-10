@@ -30,15 +30,15 @@ class DmitryWrapper(BaseWrapper):
         timeout = int(kwargs.get("timeout", 120))
         # Default options: whois (-w), subdomains (-s), emails (-e), ports (-p)
         options = kwargs.get("options", "winse")
-        
+
         command = [self.tool_path, "-" + options, input_value]
-        
+
         try:
             result = self._run_command(command, timeout=timeout)
-            
+
             # Parse output
             results = self._parse_dmitry_output(result["stdout"])
-            
+
             execution_info = {
                 "input_type": input_type,
                 "input_value": input_value,
@@ -58,7 +58,7 @@ class DmitryWrapper(BaseWrapper):
     def _parse_dmitry_output(self, stdout: str) -> List[Dict[str, Any]]:
         """Parse Dmitry stdout for findings"""
         results = []
-        
+
         # Parse Subdomains
         subdomain_pattern = re.compile(r"HostName: ([a-zA-Z0-9\.\-]+)\s+IP: ([0-9\.]+)")
         for match in subdomain_pattern.finditer(stdout):

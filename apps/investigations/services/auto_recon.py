@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from urllib.parse import urlparse
 
 from apps.transforms.wrappers.base import ToolNotFoundError
@@ -9,19 +9,20 @@ from apps.transforms.wrappers.web_enum import WappalyzerWrapper, DnsTwistWrapper
 
 logger = logging.getLogger(__name__)
 
+
 class AutoReconService:
     """
     Service for Automated Reconnaissance
     Executes a sequence of OSINT tools against a target URL/Domain.
     """
-    
+
     def __init__(self):
         self.ping = self._safe_wrapper(PingWrapper, "ping")
         self.nmap = self._safe_wrapper(NmapWrapper, "nmap")
         self.wappalyzer = self._safe_wrapper(WappalyzerWrapper, "wappalyzer")
         self.dnstwist = self._safe_wrapper(DnsTwistWrapper, "dnstwist")
         self.httpx = self._safe_wrapper(HttpxWrapper, "httpx")
-        
+
         try:
             from apps.transforms.wrappers.web_enum import WhoisWrapper
             self.whois = self._safe_wrapper(WhoisWrapper, "whois")
@@ -55,7 +56,7 @@ class AutoReconService:
             "status": "completed",
             "tools": {},
         }
-        
+
         logger.info(f"Starting Auto Recon Service on: {results['target']}")
         domain = normalized["domain"]
         if not domain:

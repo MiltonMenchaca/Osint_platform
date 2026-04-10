@@ -29,21 +29,22 @@ from .serializers import (
 from .tasks import execute_transform
 from .services import AutoReconService, OsintCatalogService
 
+
 class AutoReconView(generics.GenericAPIView):
     """
     Endpoint to trigger automated reconnaissance
     """
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def post(self, request, *args, **kwargs):
         target = request.data.get('target')
         investigation_id = request.data.get("investigation_id")
         if not target:
             return Response(
-                {"error": "Target URL/Domain is required"}, 
+                {"error": "Target URL/Domain is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         try:
             service = AutoReconService()
             results = service.run_scan(target)
@@ -177,7 +178,7 @@ class AutoReconView(generics.GenericAPIView):
                                     entity.source = tool_name
                                 entity.save(update_fields=["properties", "source", "updated_at"])
 
-                        if seed_entity.id != entity.id:
+                        if entity and seed_entity.id != entity.id:
                             Relationship.objects.get_or_create(
                                 investigation=investigation,
                                 source_entity=seed_entity,
@@ -343,7 +344,7 @@ class AutoReconView(generics.GenericAPIView):
         except Exception as e:
             logger.error(f"Auto recon failed: {e}")
             return Response(
-                {"error": str(e)}, 
+                {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -355,7 +356,6 @@ def osint_catalog(request):
     service = OsintCatalogService()
     data = service.build_catalog(target=target)
     return Response(data, status=status.HTTP_200_OK)
-
 
 
 # Create temporary serializers for missing ones
@@ -474,17 +474,17 @@ class ExecuteDorksView(generics.GenericAPIView):
     Endpoint to execute Google Dorks
     """
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def post(self, request, investigation_id, *args, **kwargs):
         dorks = request.data.get('dorks', [])
         if not dorks:
             return Response(
-                {"error": "No dorks provided"}, 
+                {"error": "No dorks provided"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
-        
+
         # Ensure Google Search transform exists
         transform, _ = Transform.objects.get_or_create(
             name="google_search",
@@ -499,22 +499,22 @@ class ExecuteDorksView(generics.GenericAPIView):
                 "is_enabled": True
             }
         )
-        
+
         # Find a suitable input entity (e.g. the seed domain)
         input_entity = investigation.entities.filter(is_seed=True).first()
         if not input_entity:
             # Fallback: create a dummy entity representing the target
-             input_entity, _ = Entity.objects.get_or_create(
+            input_entity, _ = Entity.objects.get_or_create(
                 investigation=investigation,
                 entity_type="domain",
                 value=request.data.get("target_domain", "unknown_target"),
                 defaults={"is_seed": True}
-             )
+            )
 
         execution_ids = []
         for dork in dorks:
             query = dork.get("query", dork) if isinstance(dork, dict) else dork
-            
+
             # Create execution record
             execution = TransformExecution.objects.create(
                 investigation=investigation,
@@ -523,7 +523,7 @@ class ExecuteDorksView(generics.GenericAPIView):
                 status="pending",
                 parameters={"query": query}
             )
-            
+
             # Queue task
             execute_transform.delay(
                 execution_id=str(execution.id),
@@ -531,7 +531,7 @@ class ExecuteDorksView(generics.GenericAPIView):
                 input_value=query
             )
             execution_ids.append(execution.id)
-            
+
         return Response({
             "message": f"Queued {len(execution_ids)} dork searches",
             "execution_ids": execution_ids
@@ -1072,7 +1072,7 @@ def investigation_export(request, investigation_id):
     # Get all related data
     executions = TransformExecution.objects.filter(
         investigation=investigation
-    ).select_related("transform", "created_by")
+    ).select_related("investigation", "input_entity")
 
     entities = Entity.objects.filter(investigation=investigation)
 
