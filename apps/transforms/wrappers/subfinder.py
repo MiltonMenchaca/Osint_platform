@@ -27,9 +27,8 @@ class SubfinderWrapper(BaseWrapper):
         input_value = input_data["value"]
 
         # Configuration
-        timeout = int(kwargs.get("timeout", 120)) # Increased default timeout
-        threads = int(kwargs.get("threads", 10))  # Default to 10 threads to avoid blocking/rate limits
-        silent = bool(kwargs.get("silent", True))
+        timeout = int(kwargs.get("timeout", 120))  # Increased default timeout
+        threads = int(kwargs.get("threads", 10))
         include_all_sources = bool(kwargs.get("all", False))
         sources = kwargs.get("sources")
 

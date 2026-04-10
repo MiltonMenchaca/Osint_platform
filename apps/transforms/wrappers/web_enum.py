@@ -2,12 +2,11 @@ import json
 import logging
 import re
 import shutil
-import base64
 import os
 import subprocess
 import time
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import requests
 
@@ -66,7 +65,7 @@ class DnsTwistWrapper(BaseWrapper):
                 else:
                     logger.warning(f"Could not find valid JSON end in dnstwist output: {raw_output[:100]}...")
             else:
-                 logger.warning(f"Could not find JSON start in dnstwist output: {raw_output[:100]}...")
+                logger.warning(f"Could not find JSON start in dnstwist output: {raw_output[:100]}...")
         except Exception as e:
             logger.error(f"Failed to parse dnstwist output: {e}. Raw output snippet: {raw_output[:200]}")
 
@@ -300,7 +299,7 @@ class GobusterWrapper(BaseWrapper):
             "-q",
             "-t",
             str(threads),
-            "-k", # Skip SSL verification
+            "-k",  # Skip SSL verification
         ]
         if extensions:
             command.extend(["-x", str(extensions)])
@@ -438,7 +437,7 @@ class DirbWrapper(BaseWrapper):
         from shutil import which
         # Default path in our docker container
         if os.path.exists("/usr/local/bin/dirb"):
-             return True
+            return True
         return which("dirb") is not None
 
     def get_supported_input_types(self) -> List[str]:
@@ -452,7 +451,7 @@ class DirbWrapper(BaseWrapper):
         input_type = input_data["type"]
         input_value = str(input_data["value"]).strip()
         if not input_value.startswith("http"):
-             input_value = f"http://{input_value}"
+            input_value = f"http://{input_value}"
 
         timeout = int(kwargs.get("timeout", 600))
 
@@ -461,69 +460,68 @@ class DirbWrapper(BaseWrapper):
         if not wordlist:
             wordlist = "/usr/share/dirb/wordlists/common.txt"
             if not os.path.exists(wordlist):
-                 wordlist = "/usr/share/wordlists/dirb/common.txt"
+                wordlist = "/usr/share/wordlists/dirb/common.txt"
             if not os.path.exists(wordlist):
-                 wordlist = "/tools/dirb/wordlists/common.txt"
-
+                wordlist = "/tools/dirb/wordlists/common.txt"
         temp_dir = self._create_temp_dir()
         output_file = os.path.join(temp_dir, "dirb_output.txt")
 
         try:
             # dirb <url> <wordlist> -o <output>
-            cmd = ["dirb", input_value, wordlist, "-o", output_file, "-S", "-r"] # -S: silent, -r: non-recursive (faster for test)
+            cmd = ["dirb", input_value, wordlist, "-o", output_file, "-S", "-r"]  # -S: silent, -r: non-recursive
             result = self._run_command(cmd, timeout=timeout)
 
             discovered_urls = []
 
             # Parse output file
             if os.path.exists(output_file):
-                 with open(output_file, "r") as f:
-                      content = f.read()
+                with open(output_file, "r") as f:
+                    content = f.read()
 
-                 # DIRB output format:
-                 # + http://example.com/admin (CODE:200|SIZE:123)
-                 # + http://example.com/robot.txt (CODE:200|SIZE:456)
+                # DIRB output format:
+                # + http://example.com/admin (CODE:200|SIZE:123)
+                # + http://example.com/robot.txt (CODE:200|SIZE:456)
 
-                 for line in content.splitlines():
-                      line = line.strip()
-                      if line.startswith("+"):
-                           parts = line.split()
-                           if len(parts) >= 2:
-                                url = parts[1]
-                                # Extract code if present
-                                code = 0
-                                if "(CODE:" in line:
-                                     try:
-                                          code_str = line.split("(CODE:")[1].split("|")[0]
-                                          code = int(code_str)
-                                     except:
-                                          pass
+                for line in content.splitlines():
+                    line = line.strip()
+                    if line.startswith("+"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            url = parts[1]
+                            # Extract code if present
+                            code = 0
+                            if "(CODE:" in line:
+                                try:
+                                    code_str = line.split("(CODE:")[1].split("|")[0]
+                                    code = int(code_str)
+                                except Exception:
+                                    pass
 
-                                discovered_urls.append({
-                                     "type": "url",
-                                     "value": url,
-                                     "source": "dirb",
-                                     "confidence": 1.0,
-                                     "properties": {
-                                          "status_code": code
-                                     }
-                                })
+                            discovered_urls.append({
+                                "type": "url",
+                                "value": url,
+                                "source": "dirb",
+                                "confidence": 1.0,
+                                "properties": {
+                                    "status_code": code
+                                }
+                            })
 
             # Also parse stdout if file failed for some reason
             if not discovered_urls and result.get("stdout"):
-                 for line in result["stdout"].splitlines():
-                      line = line.strip()
-                      if line.startswith("+"):
-                           parts = line.split()
-                           if len(parts) >= 2:
-                                url = parts[1]
-                                discovered_urls.append({
-                                     "type": "url",
-                                     "value": url,
-                                     "source": "dirb",
-                                     "confidence": 1.0,
-                                     "properties": {}
-                                })
+                for line in result["stdout"].splitlines():
+                    line = line.strip()
+                    if line.startswith("+"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            url = parts[1]
+                            discovered_urls.append({
+                                "type": "url",
+                                "value": url,
+                                "source": "dirb",
+                                "confidence": 1.0,
+                                "properties": {}
+                            })
 
         finally:
             self._cleanup_temp_dir()
@@ -578,36 +576,35 @@ class NiktoWrapper(BaseWrapper):
             findings = []
 
             if os.path.exists(output_file):
-                 try:
-                      with open(output_file, "r") as f:
-                           data = json.load(f)
+                try:
+                    with open(output_file, "r") as f:
+                        data = json.load(f)
 
-                      # Nikto JSON format: { "vulnerabilities": [ { "id": "...", "msg": "..." } ], ... }
-                      # Or list of scans?
-                      # Standard Nikto JSON usually has a root key or list.
+                    # Nikto JSON format: { "vulnerabilities": [ { "id": "...", "msg": "..." } ], ... }
+                    # Standard Nikto JSON usually has a root key or list.
 
-                      # Assuming standard structure
-                      vulnerabilities = data.get("vulnerabilities", [])
-                      for vuln in vulnerabilities:
-                           findings.append({
-                                "type": "other", # vulnerability
-                                "value": vuln.get("msg", "Unknown vulnerability"),
-                                "source": "nikto",
-                                "confidence": 0.9,
-                                "properties": {
-                                     "id": vuln.get("id"),
-                                     "method": vuln.get("method"),
-                                     "url": vuln.get("url"),
-                                     "osvdb": vuln.get("osvdb")
-                                }
-                           })
+                    # Assuming standard structure
+                    vulnerabilities = data.get("vulnerabilities", [])
+                    for vuln in vulnerabilities:
+                        findings.append({
+                            "type": "other",  # vulnerability
+                            "value": vuln.get("msg", "Unknown vulnerability"),
+                            "source": "nikto",
+                            "confidence": 0.9,
+                            "properties": {
+                                "id": vuln.get("id"),
+                                "method": vuln.get("method"),
+                                "url": vuln.get("url"),
+                                "osvdb": vuln.get("osvdb")
+                            }
+                        })
 
-                      if not vulnerabilities and "nikto_scan_details" in data:
-                           # Sometimes it's wrapped
-                           pass
+                    if not vulnerabilities and "nikto_scan_details" in data:
+                        # Sometimes it's wrapped
+                        pass
 
-                 except Exception as e:
-                      logger.error(f"Failed to parse nikto json: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to parse nikto json: {e}")
 
         finally:
             self._cleanup_temp_dir()
@@ -650,7 +647,7 @@ class WhatwebWrapper(BaseWrapper):
         # For whatweb, it handles it, but let's default to http:// if no protocol
         target = input_value
         if not target.startswith(("http://", "https://")):
-             target = f"http://{target}"
+            target = f"http://{target}"
 
         command = [self.tool_path, "--log-json=/dev/stdout", target]
 
@@ -671,7 +668,7 @@ class WhatwebWrapper(BaseWrapper):
                     # plugin_data is like {"string": ["..."], "version": ["..."]}
                     version = ""
                     if "version" in plugin_data and plugin_data["version"]:
-                         version = plugin_data["version"][0]
+                        version = plugin_data["version"][0]
 
                     technologies.append({
                         "type": "technology",
@@ -722,7 +719,7 @@ class WappalyzerWrapper(BaseWrapper):
 
         target = input_value
         if not target.startswith(("http://", "https://")):
-             target = f"https://{target}"
+            target = f"https://{target}"
 
         start_time = time.time()
 
@@ -819,7 +816,7 @@ class UrlScanWrapper(BaseWrapper):
 
         api_key = os.environ.get("URLSCAN_API_KEY")
         if not api_key:
-             raise ValueError("URLSCAN_API_KEY not configured")
+            raise ValueError("URLSCAN_API_KEY not configured")
 
         target = input_value
         # UrlScan prefers URLs or domains.
@@ -870,8 +867,6 @@ class UrlScanWrapper(BaseWrapper):
                     # Extract Page Info
                     page = scan_data.get("page", {})
                     task = scan_data.get("task", {})
-                    lists = scan_data.get("lists", {})
-
                     # Add Result URL
                     results.append({
                         "type": "url",
@@ -909,7 +904,7 @@ class UrlScanWrapper(BaseWrapper):
                     logger.warning(f"UrlScan poll error: {poll_resp.status_code}")
                     time.sleep(5)
             else:
-                 error = "Timeout waiting for UrlScan results"
+                error = "Timeout waiting for UrlScan results"
 
         except Exception as e:
             error = str(e)
@@ -1037,7 +1032,7 @@ class ReconNgWrapper(BaseWrapper):
         # Recon-ng path
         recon_ng_path = "/tools/recon-ng/recon-ng"
         if not os.path.exists(recon_ng_path):
-            recon_ng_path = "recon-ng" # Fallback to PATH
+            recon_ng_path = "recon-ng"  # Fallback to PATH
 
         # Build resource file content
         # Note: recon-ng commands vary by version. Assuming v5+.
@@ -1114,10 +1109,7 @@ class ReconNgWrapper(BaseWrapper):
                                             "properties": row
                                         })
                 except Exception as e:
-                     # Log error but return what we have (or empty)
-                     # We can't log easily here without self.logger if not set, but BaseWrapper has logger?
-                     # BaseWrapper uses 'import logging; logger = ...' at module level usually.
-                     pass
+                    logger.warning("Failed to parse recon-ng output: %s", e)
         finally:
             self._cleanup_temp_dir()
 

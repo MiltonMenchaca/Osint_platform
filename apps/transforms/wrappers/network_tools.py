@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform.startswith("win")
 
+
 class PingWrapper(BaseWrapper):
     def get_tool_name(self) -> str:
         return "ping"
@@ -20,7 +21,7 @@ class PingWrapper(BaseWrapper):
         path = shutil.which(self.tool_name)
         if path:
             return path
-        
+
         # Fallback for common locations
         common_paths = [
             "/bin/ping",
@@ -29,7 +30,7 @@ class PingWrapper(BaseWrapper):
             "/sbin/ping",
             "/usr/local/bin/ping"
         ]
-        
+
         if IS_WINDOWS:
             common_paths.extend([
                 "C:\\Windows\\System32\\ping.exe",
@@ -39,7 +40,7 @@ class PingWrapper(BaseWrapper):
         for p in common_paths:
             if os.path.exists(p) and os.access(p, os.X_OK):
                 return p
-                
+
         return None
 
     def get_version(self) -> str:
@@ -84,17 +85,17 @@ class PingWrapper(BaseWrapper):
             # Windows: Reply from 1.2.3.4: bytes=32 time=10ms TTL=128
             # Linux: 64 bytes from 1.2.3.4: icmp_seq=1 ttl=128 time=10.0 ms
             # Linux (with hostname): 64 bytes from dns.google (8.8.8.8): icmp_seq=1 ttl=118 time=13.7 ms
-            
+
             # Robust regex for both: look for 'from' followed by IP or hostname(IP)
             # Match 1: "from 1.2.3.4"
             # Match 2: "from dns.google (8.8.8.8)" -> extract 8.8.8.8
-            
+
             # Check for IP in parenthesis first (common in Linux with hostname)
             match_parens = re.search(r"(?:from|desde)\s+.*?\((?P<ip>(?:\d{1,3}\.){3}\d{1,3})\)", line, re.IGNORECASE)
             if match_parens:
                 ips.append(match_parens.group("ip"))
                 continue
-                
+
             # Check for direct IP after 'from' or 'desde' (Spanish Windows)
             match_direct = re.search(r"(?:from|desde)\s+(?P<ip>(?:\d{1,3}\.){3}\d{1,3})", line, re.IGNORECASE)
             if match_direct:
@@ -148,25 +149,25 @@ class TracerouteWrapper(BaseWrapper):
         max_hops = int(kwargs.get("max_hops", 30))
 
         if IS_WINDOWS:
-             # Windows: tracert -d -h max_hops input_value
-             # -d: Do not resolve addresses to hostnames
-             command = [self.tool_path, "-d", "-h", str(max_hops), input_value]
+            # Windows: tracert -d -h max_hops input_value
+            # -d: Do not resolve addresses to hostnames
+            command = [self.tool_path, "-d", "-h", str(max_hops), input_value]
         else:
-             # Linux: traceroute -I -n -m max_hops -q 1 -w 2 input_value
-             # -I: Use ICMP ECHO (like Windows tracert) instead of UDP. Requires root (usually ok in docker).
-             # -n: Do not resolve addresses to hostnames
-             # -q 1: 1 query per hop (faster)
-             # -w 2: 2 seconds wait
-             command = [self.tool_path, "-I", "-n", "-m", str(max_hops), "-q", "1", "-w", "2", input_value]
+            # Linux: traceroute -I -n -m max_hops -q 1 -w 2 input_value
+            # -I: Use ICMP ECHO instead of UDP. Requires root.
+            # -n: Do not resolve addresses to hostnames
+            # -q 1: 1 query per hop (faster)
+            # -w 2: 2 seconds wait
+            command = [self.tool_path, "-I", "-n", "-m", str(max_hops), "-q", "1", "-w", "2", input_value]
 
         result = self._run_command(command, timeout=timeout)
 
         hops: List[Dict[str, Any]] = []
-        
+
         # Windows:  1    <1 ms    <1 ms    <1 ms  192.168.1.1
         # Linux:    1  192.168.1.1  0.123 ms  0.123 ms  0.123 ms
         # Linux (ICMP/-q 1): 1  192.168.1.1  0.123 ms
-        
+
         if IS_WINDOWS:
             hop_pattern = re.compile(
                 r"^\s*(?P<hop>\d+)\s+.*\s+(?P<ip>(?:\d{1,3}\.){3}\d{1,3})"
@@ -286,11 +287,11 @@ class ZmapWrapper(BaseWrapper):
 
         timeout = int(kwargs.get("timeout", 300))
         port = int(kwargs.get("port", 80))
-        
+
         # Zmap usage: zmap -p 80 <target>
         command = [self.tool_path, "-p", str(port), input_value]
         result = self._run_command(command, timeout=timeout)
-        
+
         found = []
         # zmap outputs IPs to stdout by default
         for raw_line in (result.get("stdout") or "").splitlines():
@@ -304,7 +305,7 @@ class ZmapWrapper(BaseWrapper):
                     "confidence": 0.7,
                     "properties": {"port": port}
                 })
-                
+
         execution_info = {
             "input_type": input_type,
             "input_value": input_value,

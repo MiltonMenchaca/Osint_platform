@@ -25,14 +25,14 @@ class NucleiWrapper(BaseWrapper):
 
     def execute(self, input_data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         self._validate_input(input_data)
-        
+
         input_type = input_data["type"]
         input_value = str(input_data["value"]).strip()
 
         timeout = int(kwargs.get("timeout", 600))
         templates = kwargs.get("templates", [])  # List of templates or categories
         severity = kwargs.get("severity", "")  # critical,high,medium,low,info
-        
+
         # Create temp file for output
         fd, output_path = tempfile.mkstemp(suffix=".json")
         os.close(fd)
@@ -45,10 +45,10 @@ class NucleiWrapper(BaseWrapper):
         if templates:
             for t in templates:
                 command.extend(["-t", str(t)])
-        
+
         if severity:
             command.extend(["-severity", severity])
-            
+
         # Add some default optimizations
         # -rate-limit 150: Limit requests per second
         # -bulk-size 25: Number of hosts to scan in parallel
@@ -59,7 +59,7 @@ class NucleiWrapper(BaseWrapper):
 
         try:
             result = self._run_command(command, timeout=timeout)
-            
+
             # Parse JSON output (NDJSON format - newline delimited JSON)
             results = []
             if os.path.exists(output_path):
@@ -77,10 +77,10 @@ class NucleiWrapper(BaseWrapper):
                                 results.append(self._parse_nuclei_finding(finding))
                         except json.JSONDecodeError:
                             logger.warning(f"Failed to parse nuclei output line: {line}")
-            
+
             # If no results file but we have stdout, maybe check if it failed silently or just no results
             # Exit code 0 means success (even if no findings)
-            
+
             execution_info = {
                 "input_type": input_type,
                 "input_value": input_value,
@@ -103,7 +103,7 @@ class NucleiWrapper(BaseWrapper):
     def _parse_nuclei_finding(self, finding: Dict[str, Any]) -> Dict[str, Any]:
         """Convert Nuclei finding to internal format"""
         info = finding.get("info", {})
-        
+
         return {
             "type": "vulnerability",
             "value": info.get("name", "Unknown Vulnerability"),

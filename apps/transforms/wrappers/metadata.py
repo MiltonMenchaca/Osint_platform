@@ -1,9 +1,6 @@
 import json
 import logging
-import re
-import shutil
-import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base import BaseWrapper
 
@@ -26,16 +23,16 @@ class ExifToolWrapper(BaseWrapper):
         input_value = str(input_data["value"]).strip()
 
         timeout = int(kwargs.get("timeout", 60))
-        
-        # If it's a URL, we might need to download it first, 
+
+        # If it's a URL, we might need to download it first,
         # but for now assume input_value is a file path if it's a file/image
         # If it is a URL, we assume the user/tool handling logic downloads it.
-        # However, BaseWrapper assumes local execution. 
+        # However, BaseWrapper assumes local execution.
         # TODO: Add logic to handle URL download if not local file.
-        
+
         command = [self.tool_path, "-j", input_value]
         result = self._run_command(command, timeout=timeout)
-        
+
         metadata_results: List[Dict[str, Any]] = []
         try:
             raw_output = result.get("stdout") or "[]"
@@ -45,7 +42,7 @@ class ExifToolWrapper(BaseWrapper):
                     file_info = data[0]
                     # Convert to flat properties
                     properties = {k: v for k, v in file_info.items()}
-                    
+
                     metadata_results.append({
                         "type": "other",
                         "value": f"Metadata: {input_value}",
