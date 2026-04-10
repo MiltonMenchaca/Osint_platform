@@ -103,7 +103,8 @@ class OsintCatalogService:
             {
                 "category": "Documentos sensibles",
                 "name": "Documentos ofimáticos",
-                "query": "site:{target} (filetype:pdf OR filetype:doc OR filetype:docx OR filetype:rtf OR filetype:odt)",
+                "query": ("site:{target} (filetype:pdf OR filetype:doc OR filetype:docx"
+                           " OR filetype:rtf OR filetype:odt)"),
                 "intent": "Encontrar documentos de texto expuestos.",
                 "risk": "Divulgación de contenido interno.",
             },

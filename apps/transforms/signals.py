@@ -113,7 +113,8 @@ def _validate_transform_configuration(transform):
         if not any(placeholder in transform.command_template
                    for placeholder in ["{input_value}", "{target}", "{input}", "{{input}}"]):
             logger.warning(
-                f"Transform '{transform.name}' command template missing input placeholder ({{input_value}} or {{target}})"
+                f"Transform '{transform.name}' command template missing input placeholder"
+                f" ({{input_value}} or {{target}})"
             )
 
         # Validate parameters JSON
