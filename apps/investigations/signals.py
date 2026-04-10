@@ -18,9 +18,7 @@ def investigation_post_save(sender, instance, created, **kwargs):
     Handle post-save actions for Investigation model
     """
     if created:
-        logger.info(
-            f"New investigation created: {instance.name} (ID: {instance.id}) by {instance.created_by.username}"
-        )
+        logger.info(f"New investigation created: {instance.name} (ID: {instance.id}) by {instance.created_by.username}")
 
         # Update investigation metadata
         if not instance.metadata:
@@ -38,10 +36,7 @@ def investigation_post_save(sender, instance, created, **kwargs):
         Investigation.objects.filter(id=instance.id).update(metadata=instance.metadata)
     else:
         # Log status changes
-        if (
-            hasattr(instance, "_original_status")
-            and instance._original_status != instance.status
-        ):
+        if hasattr(instance, "_original_status") and instance._original_status != instance.status:
             logger.info(
                 f"Investigation {instance.name} status changed from "
                 f"{instance._original_status} to {instance.status}"
@@ -65,9 +60,7 @@ def investigation_post_save(sender, instance, created, **kwargs):
             instance.metadata["last_status_change"] = timezone.now().isoformat()
 
             # Save without triggering signals again
-            Investigation.objects.filter(id=instance.id).update(
-                metadata=instance.metadata
-            )
+            Investigation.objects.filter(id=instance.id).update(metadata=instance.metadata)
 
 
 @receiver(pre_delete, sender=Investigation)
@@ -78,9 +71,7 @@ def investigation_pre_delete(sender, instance, **kwargs):
     logger.warning(f"Investigation being deleted: {instance.name} (ID: {instance.id})")
 
     # Cancel any running transform executions
-    running_executions = TransformExecution.objects.filter(
-        investigation=instance, status="running"
-    )
+    running_executions = TransformExecution.objects.filter(investigation=instance, status="running")
 
     for execution in running_executions:
         try:
@@ -88,13 +79,9 @@ def investigation_pre_delete(sender, instance, **kwargs):
                 from celery import current_app
 
                 current_app.control.revoke(execution.celery_task_id, terminate=True)
-                logger.info(
-                    f"Cancelled Celery task {execution.celery_task_id} for deleted investigation"
-                )
+                logger.info(f"Cancelled Celery task {execution.celery_task_id} for deleted investigation")
         except Exception as e:
-            logger.error(
-                f"Failed to cancel Celery task {execution.celery_task_id}: {str(e)}"
-            )
+            logger.error(f"Failed to cancel Celery task {execution.celery_task_id}: {str(e)}")
 
 
 @receiver(post_save, sender=TransformExecution)
@@ -109,24 +96,17 @@ def transform_execution_post_save(sender, instance, created, **kwargs):
         )
 
         # Update investigation's last activity
-        Investigation.objects.filter(id=instance.investigation.id).update(
-            updated_at=timezone.now()
-        )
+        Investigation.objects.filter(id=instance.investigation.id).update(updated_at=timezone.now())
     else:
         # Log status changes
-        if (
-            hasattr(instance, "_original_status")
-            and instance._original_status != instance.status
-        ):
+        if hasattr(instance, "_original_status") and instance._original_status != instance.status:
             logger.info(
                 f"Transform execution {instance.id} status changed from "
                 f"{instance._original_status} to {instance.status}"
             )
 
             # Update investigation's last activity
-            Investigation.objects.filter(id=instance.investigation.id).update(
-                updated_at=timezone.now()
-            )
+            Investigation.objects.filter(id=instance.investigation.id).update(updated_at=timezone.now())
 
             # If execution completed successfully, check if investigation should be updated
             if instance.status == "completed":
@@ -149,9 +129,7 @@ def _check_investigation_completion(investigation):
 
         completed_executions = executions.filter(status="completed").count()
         failed_executions = executions.filter(status="failed").count()
-        running_executions = executions.filter(
-            status__in=["pending", "running"]
-        ).count()
+        running_executions = executions.filter(status__in=["pending", "running"]).count()
 
         # Update investigation metadata with execution stats
         if not investigation.metadata:
@@ -170,23 +148,15 @@ def _check_investigation_completion(investigation):
         )
 
         # Auto-complete investigation if all executions are done and investigation is active
-        if (
-            running_executions == 0
-            and investigation.status == "active"
-            and total_executions > 0
-        ):
+        if running_executions == 0 and investigation.status == "active" and total_executions > 0:
             if failed_executions == 0:
                 # All executions completed successfully
                 investigation.status = "completed"
-                logger.info(
-                    f"Investigation {investigation.name} auto-completed - all executions successful"
-                )
+                logger.info(f"Investigation {investigation.name} auto-completed - all executions successful")
             elif completed_executions > 0:
                 # Some executions completed, some failed
                 investigation.status = "completed"
-                logger.info(
-                    f"Investigation {investigation.name} completed with {failed_executions} failed executions"
-                )
+                logger.info(f"Investigation {investigation.name} completed with {failed_executions} failed executions")
 
         investigation.save()
 
@@ -202,9 +172,7 @@ def _handle_execution_failure(execution):
         investigation = execution.investigation
 
         # Count failed executions
-        failed_count = TransformExecution.objects.filter(
-            investigation=investigation, status="failed"
-        ).count()
+        failed_count = TransformExecution.objects.filter(investigation=investigation, status="failed").count()
 
         # If too many failures, consider pausing the investigation
         max_failures = getattr(settings, "OSINT_MAX_EXECUTION_FAILURES", 10)
@@ -224,8 +192,7 @@ def _handle_execution_failure(execution):
             investigation.save()
 
             logger.warning(
-                f"Investigation {investigation.name} auto-paused due to "
-                f"{failed_count} failed executions"
+                f"Investigation {investigation.name} auto-paused due to " f"{failed_count} failed executions"
             )
 
     except Exception as e:
@@ -244,9 +211,7 @@ def entity_post_save(sender, instance, created, **kwargs):
         )
 
         # Update investigation's last activity
-        Investigation.objects.filter(id=instance.investigation.id).update(
-            updated_at=timezone.now()
-        )
+        Investigation.objects.filter(id=instance.investigation.id).update(updated_at=timezone.now())
 
         # Update investigation metadata with entity count
         investigation = instance.investigation
@@ -258,6 +223,4 @@ def entity_post_save(sender, instance, created, **kwargs):
         investigation.metadata["entity_count"] = entity_count
         investigation.metadata["last_entity_added"] = timezone.now().isoformat()
 
-        Investigation.objects.filter(id=investigation.id).update(
-            metadata=investigation.metadata
-        )
+        Investigation.objects.filter(id=investigation.id).update(metadata=investigation.metadata)

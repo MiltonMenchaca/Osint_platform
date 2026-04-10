@@ -40,9 +40,7 @@ def execute_transform(
         execution.celery_task_id = self.request.id
         execution.start_execution()
 
-        logger.info(
-            f"Starting transform execution {execution_id}: {transform_name} on {input_value}"
-        )
+        logger.info(f"Starting transform execution {execution_id}: {transform_name} on {input_value}")
 
         # Get the transform definition
         try:
@@ -67,9 +65,7 @@ def execute_transform(
         )
 
         # Process results and create entities/relationships
-        processed_results = _process_transform_results(
-            execution=execution, transform=transform, raw_results=results
-        )
+        processed_results = _process_transform_results(execution=execution, transform=transform, raw_results=results)
 
         # Complete the execution
         execution.complete_execution(processed_results)
@@ -95,9 +91,7 @@ def execute_transform(
 
         # Retry logic
         if self.request.retries < self.max_retries:
-            logger.info(
-                f"Retrying transform execution {execution_id} (attempt {self.request.retries + 1})"
-            )
+            logger.info(f"Retrying transform execution {execution_id} (attempt {self.request.retries + 1})")
             raise self.retry(countdown=60 * (self.request.retries + 1), exc=exc)
 
         return {"status": "failed", "execution_id": execution_id, "error": str(exc)}
@@ -147,9 +141,7 @@ def _execute_osint_tool(
             metadata = wrapper_result.get("metadata") or {}
 
             return {
-                "command": metadata.get("command") or transform.get_command(
-                    input_value, **(parameters or {})
-                ),
+                "command": metadata.get("command") or transform.get_command(input_value, **(parameters or {})),
                 "return_code": 0,
                 "stdout": json.dumps(wrapper_result, ensure_ascii=False),
                 "stderr": "",
@@ -165,6 +157,7 @@ def _execute_osint_tool(
         except Exception as e:
             logger.warning(f"Wrapper execution failed: {e}. Falling back to command line.")
             import traceback
+
             logger.warning(traceback.format_exc())
             pass
 
@@ -174,6 +167,7 @@ def _execute_osint_tool(
         logger.info(f"Executing command: {command}")
 
         import tempfile
+
         cwd = getattr(settings, "OSINT_TOOLS_DIR", tempfile.gettempdir())
 
         # Execute the command
@@ -187,9 +181,7 @@ def _execute_osint_tool(
         )
 
         if result.returncode != 0:
-            error_msg = (
-                f"Command failed with return code {result.returncode}: {result.stderr}"
-            )
+            error_msg = f"Command failed with return code {result.returncode}: {result.stderr}"
             logger.error(error_msg)
             raise Exception(error_msg)
 
@@ -256,9 +248,7 @@ def _parse_tool_output(tool_name: str, output: str) -> List[Dict[str, Any]]:
                         )
                     except json.JSONDecodeError:
                         # Fallback to plain text
-                        parsed_entities.append(
-                            {"type": "domain", "value": line.strip(), "source": "amass"}
-                        )
+                        parsed_entities.append({"type": "domain", "value": line.strip(), "source": "amass"})
 
         elif tool_name == "nmap":
             # Parse nmap output for open ports and services
@@ -323,12 +313,17 @@ def _parse_tool_output(tool_name: str, output: str) -> List[Dict[str, Any]]:
                                 "location": data.get("location", {}),
                                 "data": data.get("data", ""),
                             }
-                            parsed_entities.append({
-                                "type": "ip", "value": ip_val,
-                                "source": "shodan", "properties": props,
-                            })
+                            parsed_entities.append(
+                                {
+                                    "type": "ip",
+                                    "value": ip_val,
+                                    "source": "shodan",
+                                    "properties": props,
+                                }
+                            )
             except json.JSONDecodeError:
                 import re
+
                 lines = (output or "").splitlines()
                 ip_regex = r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b"
                 ports = []
@@ -416,10 +411,7 @@ def _parse_tool_output(tool_name: str, output: str) -> List[Dict[str, Any]]:
             import re
 
             # Domain pattern
-            domain_pattern = (
-                r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
-                r"[a-zA-Z]{2,}\b"
-            )
+            domain_pattern = r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+" r"[a-zA-Z]{2,}\b"
             domains = re.findall(domain_pattern, output)
 
             # IP pattern
@@ -431,17 +423,13 @@ def _parse_tool_output(tool_name: str, output: str) -> List[Dict[str, Any]]:
             emails = re.findall(email_pattern, output)
 
             for domain in set(domains):
-                parsed_entities.append(
-                    {"type": "domain", "value": domain, "source": tool_name}
-                )
+                parsed_entities.append({"type": "domain", "value": domain, "source": tool_name})
 
             for ip in set(ips):
                 parsed_entities.append({"type": "ip", "value": ip, "source": tool_name})
 
             for email in set(emails):
-                parsed_entities.append(
-                    {"type": "email", "value": email, "source": tool_name}
-                )
+                parsed_entities.append({"type": "email", "value": email, "source": tool_name})
 
     except Exception as e:
         logger.error(f"Error parsing {tool_name} output: {str(e)}")
@@ -449,9 +437,7 @@ def _parse_tool_output(tool_name: str, output: str) -> List[Dict[str, Any]]:
     return parsed_entities
 
 
-def _process_transform_results(
-    execution: Any, transform: Any, raw_results: Dict[str, Any]
-) -> Dict[str, Any]:
+def _process_transform_results(execution: Any, transform: Any, raw_results: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process transform results and create entities/relationships
 
@@ -487,11 +473,7 @@ def _process_transform_results(
             if entity_type in {"subdomain", "hostname"}:
                 entity_type = "domain"
             elif entity_type == "host":
-                entity_type = (
-                    "ip"
-                    if re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", value)
-                    else "domain"
-                )
+                entity_type = "ip" if re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", value) else "domain"
             elif entity_type.startswith("hash_"):
                 entity_type = "hash"
 
@@ -521,15 +503,11 @@ def _process_transform_results(
                 logger.warning(f"Error creating entity {entity_type}:{value} - {e}. Trying to get existing.")
                 try:
                     entity = Entity.objects.get(
-                        investigation=execution.investigation,
-                        entity_type=entity_type,
-                        value=value
+                        investigation=execution.investigation, entity_type=entity_type, value=value
                     )
                     created = False
                 except Entity.DoesNotExist:
-                    logger.error(
-                        f"Failed to create or retrieve entity {entity_type}:{value}: {e}"
-                    )
+                    logger.error(f"Failed to create or retrieve entity {entity_type}:{value}: {e}")
                     continue
 
             if created:
@@ -575,9 +553,7 @@ def _process_transform_results(
     }
 
 
-def _determine_relationship_type(
-    source_type: str, target_type: str, transform_name: str
-) -> str:
+def _determine_relationship_type(source_type: str, target_type: str, transform_name: str) -> str:
     """
     Determine the appropriate relationship type based on entity types and transform
 

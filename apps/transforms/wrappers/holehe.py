@@ -187,9 +187,7 @@ class HoleheWrapper(BaseWrapper):
 
         return bool(email_pattern.match(email))
 
-    def execute_with_validation(
-        self, input_data: Dict[str, Any], **kwargs
-    ) -> Dict[str, Any]:
+    def execute_with_validation(self, input_data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Execute with additional email validation"""
 
         input_value = input_data.get("value", "")
@@ -228,9 +226,7 @@ class HoleheWrapper(BaseWrapper):
             "platforms": list(platforms),
             "rate_limited_count": rate_limited_count,
             "error_count": error_count,
-            "success_rate": (total_accounts - error_count) / total_accounts
-            if total_accounts > 0
-            else 0,
+            "success_rate": (total_accounts - error_count) / total_accounts if total_accounts > 0 else 0,
         }
 
     def filter_results(

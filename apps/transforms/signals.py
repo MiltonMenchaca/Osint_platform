@@ -42,8 +42,7 @@ def transform_post_save(sender, instance, created, **kwargs):
             is_available, message = instance.check_availability()
             if not is_available:
                 logger.warning(
-                    f"Transform '{instance.name}' tool '{instance.tool_name}' "
-                    f"is not available: {message}"
+                    f"Transform '{instance.name}' tool '{instance.tool_name}' " f"is not available: {message}"
                 )
         else:
             logger.info(f"Transform updated: {instance.name}")
@@ -55,9 +54,7 @@ def transform_post_save(sender, instance, created, **kwargs):
         _update_transform_metadata(instance)
 
     except Exception as e:
-        logger.error(
-            f"Error in transform post_save signal for {instance.name}: {str(e)}"
-        )
+        logger.error(f"Error in transform post_save signal for {instance.name}: {str(e)}")
 
 
 @receiver(pre_delete, sender=Transform)
@@ -74,10 +71,7 @@ def transform_pre_delete(sender, instance, **kwargs):
         ).count()
 
         if active_executions > 0:
-            logger.warning(
-                f"Deleting transform '{instance.name}' with {active_executions} "
-                f"active executions"
-            )
+            logger.warning(f"Deleting transform '{instance.name}' with {active_executions} " f"active executions")
 
         # Clear caches
         cache_key = f"transform_{instance.name}"
@@ -90,14 +84,11 @@ def transform_pre_delete(sender, instance, **kwargs):
         cache.delete("enabled_transforms")
 
         logger.info(
-            f"Transform deleted: {instance.name} "
-            f"(Category: {instance.category}, Tool: {instance.tool_name})"
+            f"Transform deleted: {instance.name} " f"(Category: {instance.category}, Tool: {instance.tool_name})"
         )
 
     except Exception as e:
-        logger.error(
-            f"Error in transform pre_delete signal for {instance.name}: {str(e)}"
-        )
+        logger.error(f"Error in transform pre_delete signal for {instance.name}: {str(e)}")
 
 
 def _validate_transform_configuration(transform):
@@ -110,8 +101,10 @@ def _validate_transform_configuration(transform):
             logger.error(f"Transform '{transform.name}' has empty command template")
             return False
 
-        if not any(placeholder in transform.command_template
-                   for placeholder in ["{input_value}", "{target}", "{input}", "{{input}}"]):
+        if not any(
+            placeholder in transform.command_template
+            for placeholder in ["{input_value}", "{target}", "{input}", "{{input}}"]
+        ):
             logger.warning(
                 f"Transform '{transform.name}' command template missing input placeholder"
                 f" ({{input_value}} or {{target}})"
@@ -122,16 +115,12 @@ def _validate_transform_configuration(transform):
             try:
                 json.loads(transform.parameters)
             except json.JSONDecodeError as e:
-                logger.error(
-                    f"Transform '{transform.name}' has invalid JSON parameters: {str(e)}"
-                )
+                logger.error(f"Transform '{transform.name}' has invalid JSON parameters: {str(e)}")
                 return False
 
         # Validate timeout
         if transform.timeout and transform.timeout <= 0:
-            logger.error(
-                f"Transform '{transform.name}' has invalid timeout: {transform.timeout}"
-            )
+            logger.error(f"Transform '{transform.name}' has invalid timeout: {transform.timeout}")
             return False
 
         # Validate input/output types
@@ -159,35 +148,25 @@ def _validate_transform_configuration(transform):
             "account",
             "other",
             "mixed",
-            "any"
+            "any",
         ]
 
         if transform.input_type not in valid_types:
-            logger.warning(
-                f"Transform '{transform.name}' has unknown input type: {transform.input_type}"
-            )
+            logger.warning(f"Transform '{transform.name}' has unknown input type: {transform.input_type}")
 
-        if hasattr(transform, 'output_types') and isinstance(transform.output_types, list):
+        if hasattr(transform, "output_types") and isinstance(transform.output_types, list):
             for output_type in transform.output_types:
                 if output_type not in valid_types:
-                    logger.warning(
-                        f"Transform '{transform.name}' has unknown output type: {output_type}"
-                    )
-        elif hasattr(transform, 'output_type'):  # Legacy check
+                    logger.warning(f"Transform '{transform.name}' has unknown output type: {output_type}")
+        elif hasattr(transform, "output_type"):  # Legacy check
             if transform.output_type not in valid_types:
-                logger.warning(
-                    f"Transform '{transform.name}' has unknown output type: {transform.output_type}"
-                )
+                logger.warning(f"Transform '{transform.name}' has unknown output type: {transform.output_type}")
 
-        logger.debug(
-            f"Transform '{transform.name}' configuration validated successfully"
-        )
+        logger.debug(f"Transform '{transform.name}' configuration validated successfully")
         return True
 
     except Exception as e:
-        logger.error(
-            f"Error validating transform '{transform.name}' configuration: {str(e)}"
-        )
+        logger.error(f"Error validating transform '{transform.name}' configuration: {str(e)}")
         return False
 
 
@@ -202,24 +181,16 @@ def _update_transform_metadata(transform):
         # Calculate usage statistics
         from apps.investigations.models import TransformExecution
 
-        total_executions = TransformExecution.objects.filter(
-            transform_name=transform.name
-        ).count()
+        total_executions = TransformExecution.objects.filter(transform_name=transform.name).count()
 
         successful_executions = TransformExecution.objects.filter(
             transform_name=transform.name, status="completed"
         ).count()
 
-        failed_executions = TransformExecution.objects.filter(
-            transform_name=transform.name, status="failed"
-        ).count()
+        failed_executions = TransformExecution.objects.filter(transform_name=transform.name, status="failed").count()
 
         # Calculate success rate
-        success_rate = (
-            (successful_executions / total_executions * 100)
-            if total_executions > 0
-            else 0
-        )
+        success_rate = (successful_executions / total_executions * 100) if total_executions > 0 else 0
 
         # Store metadata in cache for quick access
         metadata = {
@@ -239,9 +210,7 @@ def _update_transform_metadata(transform):
         )
 
     except Exception as e:
-        logger.error(
-            f"Error updating metadata for transform '{transform.name}': {str(e)}"
-        )
+        logger.error(f"Error updating metadata for transform '{transform.name}': {str(e)}")
 
 
 def get_transform_statistics():
@@ -268,18 +237,10 @@ def get_transform_statistics():
         )
 
         # Category statistics
-        category_stats = (
-            Transform.objects.values("category")
-            .annotate(count=Count("id"))
-            .order_by("-count")
-        )
+        category_stats = Transform.objects.values("category").annotate(count=Count("id")).order_by("-count")
 
         # Tool statistics
-        tool_stats = (
-            Transform.objects.values("tool_name")
-            .annotate(count=Count("id"))
-            .order_by("-count")
-        )
+        tool_stats = Transform.objects.values("tool_name").annotate(count=Count("id")).order_by("-count")
 
         # Most used transforms
         popular_transforms = (
@@ -296,11 +257,7 @@ def get_transform_statistics():
             "category_stats": list(category_stats),
             "tool_stats": list(tool_stats),
             "popular_transforms": list(popular_transforms),
-            "success_rate": (
-                (execution_stats["completed"] / total_executions * 100)
-                if total_executions > 0
-                else 0
-            ),
+            "success_rate": ((execution_stats["completed"] / total_executions * 100) if total_executions > 0 else 0),
         }
 
         # Cache statistics
@@ -319,9 +276,7 @@ def refresh_transform_cache():
     """
     try:
         # Clear all transform caches
-        cache.delete_many(
-            ["all_transforms", "enabled_transforms", "transform_statistics"]
-        )
+        cache.delete_many(["all_transforms", "enabled_transforms", "transform_statistics"])
 
         # Clear individual transform caches
         for transform in Transform.objects.all():
@@ -360,8 +315,7 @@ def check_all_transforms_availability():
 
             if not is_available:
                 logger.warning(
-                    f"Transform '{transform.name}' tool '{transform.tool_name}' "
-                    f"is not available: {message}"
+                    f"Transform '{transform.name}' tool '{transform.tool_name}' " f"is not available: {message}"
                 )
 
         # Cache results

@@ -60,9 +60,7 @@ class AmassWrapper(BaseWrapper):
                     max_dns_queries=max_dns_queries,
                 )
             elif mode == "intel":
-                command = self._build_intel_command(
-                    input_value, config_file=config_file, json_output=json_output
-                )
+                command = self._build_intel_command(input_value, config_file=config_file, json_output=json_output)
             else:
                 raise ValueError(f"Unsupported Amass mode: {mode}")
 
@@ -307,9 +305,7 @@ class AmassWrapper(BaseWrapper):
         """Perform brute force subdomain enumeration"""
         input_data = {"type": "domain", "value": domain}
 
-        return self.execute(
-            input_data, mode="enum", brute=True, wordlist=wordlist, **kwargs
-        )
+        return self.execute(input_data, mode="enum", brute=True, wordlist=wordlist, **kwargs)
 
     def intel_enum(self, target: str, **kwargs) -> Dict[str, Any]:
         """Perform intelligence gathering"""
@@ -329,9 +325,7 @@ class AmassWrapper(BaseWrapper):
         """Perform comprehensive enumeration (passive + active + brute)"""
         input_data = {"type": "domain", "value": domain}
 
-        return self.execute(
-            input_data, mode="enum", passive=True, active=True, brute=True, **kwargs
-        )
+        return self.execute(input_data, mode="enum", passive=True, active=True, brute=True, **kwargs)
 
     def get_help(self) -> Dict[str, Any]:
         """Get Amass help information"""

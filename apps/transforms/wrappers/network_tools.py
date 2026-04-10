@@ -23,19 +23,10 @@ class PingWrapper(BaseWrapper):
             return path
 
         # Fallback for common locations
-        common_paths = [
-            "/bin/ping",
-            "/usr/bin/ping",
-            "/usr/sbin/ping",
-            "/sbin/ping",
-            "/usr/local/bin/ping"
-        ]
+        common_paths = ["/bin/ping", "/usr/bin/ping", "/usr/sbin/ping", "/sbin/ping", "/usr/local/bin/ping"]
 
         if IS_WINDOWS:
-            common_paths.extend([
-                "C:\\Windows\\System32\\ping.exe",
-                "C:\\Windows\\SysWOW64\\ping.exe"
-            ])
+            common_paths.extend(["C:\\Windows\\System32\\ping.exe", "C:\\Windows\\SysWOW64\\ping.exe"])
 
         for p in common_paths:
             if os.path.exists(p) and os.access(p, os.X_OK):
@@ -103,9 +94,7 @@ class PingWrapper(BaseWrapper):
 
         results: List[Dict[str, Any]] = []
         for ip in sorted(set(ips)):
-            results.append(
-                {"type": "ip", "value": ip, "source": "ping", "confidence": 0.6}
-            )
+            results.append({"type": "ip", "value": ip, "source": "ping", "confidence": 0.6})
 
         if not results:
             results.append(
@@ -169,14 +158,10 @@ class TracerouteWrapper(BaseWrapper):
         # Linux (ICMP/-q 1): 1  192.168.1.1  0.123 ms
 
         if IS_WINDOWS:
-            hop_pattern = re.compile(
-                r"^\s*(?P<hop>\d+)\s+.*\s+(?P<ip>(?:\d{1,3}\.){3}\d{1,3})"
-            )
+            hop_pattern = re.compile(r"^\s*(?P<hop>\d+)\s+.*\s+(?P<ip>(?:\d{1,3}\.){3}\d{1,3})")
         else:
             # Match hop number, then IP anywhere on the line
-            hop_pattern = re.compile(
-                r"^\s*(?P<hop>\d+)\s+(?:.*?\s+)?(?P<ip>(?:\d{1,3}\.){3}\d{1,3})"
-            )
+            hop_pattern = re.compile(r"^\s*(?P<hop>\d+)\s+(?:.*?\s+)?(?P<ip>(?:\d{1,3}\.){3}\d{1,3})")
 
         for raw_line in (result.get("stdout") or "").splitlines():
             line = raw_line.strip()
@@ -298,13 +283,9 @@ class ZmapWrapper(BaseWrapper):
             ip = raw_line.strip()
             # Simple IP validation regex
             if re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", ip):
-                found.append({
-                    "type": "ip",
-                    "value": ip,
-                    "source": "zmap",
-                    "confidence": 0.7,
-                    "properties": {"port": port}
-                })
+                found.append(
+                    {"type": "ip", "value": ip, "source": "zmap", "confidence": 0.7, "properties": {"port": port}}
+                )
 
         execution_info = {
             "input_type": input_type,

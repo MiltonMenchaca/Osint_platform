@@ -128,9 +128,7 @@ class TransformNotFoundError(TransformError):
 class TransformExecutionError(TransformError):
     """Transform execution failed"""
 
-    def __init__(
-        self, transform_name: str, error_message: str, execution_id: str = None
-    ):
+    def __init__(self, transform_name: str, error_message: str, execution_id: str = None):
         message = f"Transform '{transform_name}' execution failed: {error_message}"
         details = {"transform_name": transform_name, "error_message": error_message}
         if execution_id:
@@ -141,12 +139,8 @@ class TransformExecutionError(TransformError):
 class TransformTimeoutError(TransformError):
     """Transform execution timed out"""
 
-    def __init__(
-        self, transform_name: str, timeout_seconds: int, execution_id: str = None
-    ):
-        message = (
-            f"Transform '{transform_name}' timed out after {timeout_seconds} seconds"
-        )
+    def __init__(self, transform_name: str, timeout_seconds: int, execution_id: str = None):
+        message = f"Transform '{transform_name}' timed out after {timeout_seconds} seconds"
         details = {"transform_name": transform_name, "timeout_seconds": timeout_seconds}
         if execution_id:
             details["execution_id"] = execution_id
@@ -195,9 +189,7 @@ class ToolNotFoundError(ToolError):
 class ToolExecutionError(ToolError):
     """OSINT tool execution failed"""
 
-    def __init__(
-        self, tool_name: str, command: str, exit_code: int, stderr: str = None
-    ):
+    def __init__(self, tool_name: str, command: str, exit_code: int, stderr: str = None):
         message = f"Tool '{tool_name}' execution failed with exit code {exit_code}"
         details = {"tool_name": tool_name, "command": command, "exit_code": exit_code}
         if stderr:
@@ -209,9 +201,7 @@ class ToolTimeoutError(ToolError):
     """OSINT tool execution timed out"""
 
     def __init__(self, tool_name: str, timeout_seconds: int):
-        message = (
-            f"Tool '{tool_name}' execution timed out after {timeout_seconds} seconds"
-        )
+        message = f"Tool '{tool_name}' execution timed out after {timeout_seconds} seconds"
         details = {"tool_name": tool_name, "timeout_seconds": timeout_seconds}
         super().__init__(message, "TOOL_TIMEOUT", details)
 
@@ -335,9 +325,7 @@ def custom_exception_handler(exc, context):
             "exception_type": type(exc).__name__,
             "request_path": request.path if request else None,
             "request_method": request.method if request else None,
-            "user_id": getattr(request.user, "id", None)
-            if request and hasattr(request, "user")
-            else None,
+            "user_id": getattr(request.user, "id", None) if request and hasattr(request, "user") else None,
         },
         exc_info=True,
     )
@@ -352,11 +340,7 @@ def custom_exception_handler(exc, context):
             "error": {
                 "code": "VALIDATION_ERROR",
                 "message": "Validation failed",
-                "details": {
-                    "validation_errors": exc.message_dict
-                    if hasattr(exc, "message_dict")
-                    else [str(exc)]
-                },
+                "details": {"validation_errors": exc.message_dict if hasattr(exc, "message_dict") else [str(exc)]},
             }
         }
         return Response(error_data, status=status.HTTP_400_BAD_REQUEST)
@@ -478,9 +462,7 @@ class ErrorHandlingMiddleware:
                     "exception_type": type(exc).__name__,
                     "request_path": request.path,
                     "request_method": request.method,
-                    "user_id": getattr(request.user, "id", None)
-                    if hasattr(request, "user")
-                    else None,
+                    "user_id": getattr(request.user, "id", None) if hasattr(request, "user") else None,
                 },
                 exc_info=True,
             )

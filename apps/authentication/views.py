@@ -49,9 +49,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             raise InvalidToken(e.args[0])
 
         # Get user and update last login
-        user = authenticate(
-            username=request.data.get("username"), password=request.data.get("password")
-        )
+        user = authenticate(username=request.data.get("username"), password=request.data.get("password"))
 
         if user:
             user.last_login = timezone.now()
@@ -181,9 +179,7 @@ class ChangePasswordView(APIView):
 
         # Check old password
         if not user.check_password(old_password):
-            return Response(
-                {"error": "Invalid old password"}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Invalid old password"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate new password
         try:
@@ -222,9 +218,7 @@ class LogoutView(APIView):
 
             logger.info(f"User {request.user.username} logged out")
 
-            return Response(
-                {"message": "Successfully logged out"}, status=status.HTTP_200_OK
-            )
+            return Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Logout error for user {request.user.username}: {str(e)}")
@@ -255,9 +249,7 @@ class APITokenListCreateView(generics.ListCreateAPIView):
 
         api_token = serializer.save(user=self.request.user, token=token)
 
-        logger.info(
-            f"API token '{api_token.name}' created for user {self.request.user.username}"
-        )
+        logger.info(f"API token '{api_token.name}' created for user {self.request.user.username}")
 
         # Return token in response (only time it's shown)
         api_token.token_preview = token
@@ -281,15 +273,11 @@ class APITokenDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_update(self, serializer):
         """Log token updates"""
         token = serializer.save()
-        logger.info(
-            f"API token '{token.name}' updated by user {self.request.user.username}"
-        )
+        logger.info(f"API token '{token.name}' updated by user {self.request.user.username}")
 
     def perform_destroy(self, instance):
         """Log token deletion"""
-        logger.info(
-            f"API token '{instance.name}' deleted by user {self.request.user.username}"
-        )
+        logger.info(f"API token '{instance.name}' deleted by user {self.request.user.username}")
         instance.delete()
 
 
@@ -300,9 +288,7 @@ def regenerate_api_token(request, pk):
     try:
         token = APIToken.objects.get(pk=pk, user=request.user)
     except APIToken.DoesNotExist:
-        return Response(
-            {"error": "API token not found"}, status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"error": "API token not found"}, status=status.HTTP_404_NOT_FOUND)
 
     # Generate new token
     alphabet = string.ascii_letters + string.digits
@@ -311,9 +297,7 @@ def regenerate_api_token(request, pk):
     token.token = new_token
     token.save()
 
-    logger.info(
-        f"API token '{token.name}' regenerated for user {request.user.username}"
-    )
+    logger.info(f"API token '{token.name}' regenerated for user {request.user.username}")
 
     return Response(
         {
@@ -332,9 +316,7 @@ def extend_token_expiry(request, pk):
     try:
         token = APIToken.objects.get(pk=pk, user=request.user)
     except APIToken.DoesNotExist:
-        return Response(
-            {"error": "API token not found"}, status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"error": "API token not found"}, status=status.HTTP_404_NOT_FOUND)
 
     # Extend expiry by 30 days
     if token.expires_at:
@@ -344,9 +326,7 @@ def extend_token_expiry(request, pk):
 
     token.save()
 
-    logger.info(
-        f"API token '{token.name}' expiry extended for user {request.user.username}"
-    )
+    logger.info(f"API token '{token.name}' expiry extended for user {request.user.username}")
 
     return Response(
         {
@@ -413,15 +393,9 @@ def user_stats(request):
     last_24h = now - timedelta(hours=24)
     last_7d = now - timedelta(days=7)
     last_30d = now - timedelta(days=30)
-    last_24h_investigations = investigations.filter(
-        created_at__gte=last_24h
-    )
-    last_7d_investigations = investigations.filter(
-        created_at__gte=last_7d
-    )
-    last_30d_investigations = investigations.filter(
-        created_at__gte=last_30d
-    )
+    last_24h_investigations = investigations.filter(created_at__gte=last_24h)
+    last_7d_investigations = investigations.filter(created_at__gte=last_7d)
+    last_30d_investigations = investigations.filter(created_at__gte=last_30d)
 
     last_24h_executions = executions.filter(created_at__gte=last_24h)
     last_7d_executions = executions.filter(created_at__gte=last_7d)
@@ -433,17 +407,11 @@ def user_stats(request):
 
     investigations_by_status = {key: 0 for key in ["active", "completed", "paused", "archived"]}
     investigations_by_status.update(
-        dict(
-            investigations.values("status")
-            .annotate(count=Count("id"))
-            .values_list("status", "count")
-        )
+        dict(investigations.values("status").annotate(count=Count("id")).values_list("status", "count"))
     )
 
     entities_by_type = dict(
-        entities.values("entity_type")
-        .annotate(count=Count("id"))
-        .values_list("entity_type", "count")
+        entities.values("entity_type").annotate(count=Count("id")).values_list("entity_type", "count")
     )
 
     stats = {
@@ -495,12 +463,8 @@ def user_stats(request):
         },
         "api_tokens": {
             "total": APIToken.objects.filter(user=user).count(),
-            "active": APIToken.objects.filter(
-                user=user, is_active=True, expires_at__gt=timezone.now()
-            ).count(),
-            "expired": APIToken.objects.filter(
-                user=user, expires_at__lte=timezone.now()
-            ).count(),
+            "active": APIToken.objects.filter(user=user, is_active=True, expires_at__gt=timezone.now()).count(),
+            "expired": APIToken.objects.filter(user=user, expires_at__lte=timezone.now()).count(),
         },
     }
 
@@ -516,13 +480,9 @@ def user_activity(request):
     # Get recent investigations
     from apps.investigations.models import Investigation, TransformExecution
 
-    recent_investigations = Investigation.objects.filter(created_by=user).order_by(
-        "-created_at"
-    )[:10]
+    recent_investigations = Investigation.objects.filter(created_by=user).order_by("-created_at")[:10]
 
-    recent_executions = TransformExecution.objects.filter(
-        investigation__created_by=user
-    ).order_by("-created_at")[:20]
+    recent_executions = TransformExecution.objects.filter(investigation__created_by=user).order_by("-created_at")[:20]
 
     activity = {
         "recent_investigations": [
@@ -593,19 +553,15 @@ def check_permissions(request):
         "profile": {
             "role": profile.role,
             "api_access_enabled": profile.api_access_enabled,
-            "can_create_investigations": profile.role
-            in ["admin", "analyst", "investigator"],
-            "can_execute_transforms": profile.role
-            in ["admin", "analyst", "investigator"],
+            "can_create_investigations": profile.role in ["admin", "analyst", "investigator"],
+            "can_execute_transforms": profile.role in ["admin", "analyst", "investigator"],
             "can_manage_transforms": profile.role in ["admin"],
             "can_view_all_investigations": profile.role in ["admin"],
             "can_manage_users": profile.role in ["admin"],
         },
         "api_tokens": {
             "can_create": profile.api_access_enabled,
-            "active_tokens": APIToken.objects.filter(
-                user=user, is_active=True, expires_at__gt=timezone.now()
-            ).count(),
+            "active_tokens": APIToken.objects.filter(user=user, is_active=True, expires_at__gt=timezone.now()).count(),
         },
     }
 
@@ -665,39 +621,25 @@ def admin_stats(request):
             "new_last_7d": User.objects.filter(date_joined__gte=last_7d).count(),
             "new_last_30d": User.objects.filter(date_joined__gte=last_30d).count(),
             "by_role": dict(
-                UserProfile.objects.values("role")
-                .annotate(count=Count("id"))
-                .values_list("role", "count")
+                UserProfile.objects.values("role").annotate(count=Count("id")).values_list("role", "count")
             ),
         },
         "investigations": {
             "total": Investigation.objects.count(),
             "active": Investigation.objects.filter(status="active").count(),
             "completed": Investigation.objects.filter(status="completed").count(),
-            "new_last_24h": Investigation.objects.filter(
-                created_at__gte=last_24h
-            ).count(),
-            "new_last_7d": Investigation.objects.filter(
-                created_at__gte=last_7d
-            ).count(),
-            "new_last_30d": Investigation.objects.filter(
-                created_at__gte=last_30d
-            ).count(),
+            "new_last_24h": Investigation.objects.filter(created_at__gte=last_24h).count(),
+            "new_last_7d": Investigation.objects.filter(created_at__gte=last_7d).count(),
+            "new_last_30d": Investigation.objects.filter(created_at__gte=last_30d).count(),
         },
         "executions": {
             "total": TransformExecution.objects.count(),
             "successful": TransformExecution.objects.filter(status="completed").count(),
             "failed": TransformExecution.objects.filter(status="failed").count(),
             "running": TransformExecution.objects.filter(status="running").count(),
-            "last_24h": TransformExecution.objects.filter(
-                created_at__gte=last_24h
-            ).count(),
-            "last_7d": TransformExecution.objects.filter(
-                created_at__gte=last_7d
-            ).count(),
-            "last_30d": TransformExecution.objects.filter(
-                created_at__gte=last_30d
-            ).count(),
+            "last_24h": TransformExecution.objects.filter(created_at__gte=last_24h).count(),
+            "last_7d": TransformExecution.objects.filter(created_at__gte=last_7d).count(),
+            "last_30d": TransformExecution.objects.filter(created_at__gte=last_30d).count(),
         },
         "transforms": {
             "total": Transform.objects.count(),
@@ -706,9 +648,7 @@ def admin_stats(request):
         },
         "api_tokens": {
             "total": APIToken.objects.count(),
-            "active": APIToken.objects.filter(
-                is_active=True, expires_at__gt=now
-            ).count(),
+            "active": APIToken.objects.filter(is_active=True, expires_at__gt=now).count(),
             "expired": APIToken.objects.filter(expires_at__lte=now).count(),
         },
     }

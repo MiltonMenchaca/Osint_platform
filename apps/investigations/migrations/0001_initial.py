@@ -117,9 +117,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "transform_name",
-                    models.CharField(
-                        help_text="Name of the transform being executed", max_length=100
-                    ),
+                    models.CharField(help_text="Name of the transform being executed", max_length=100),
                 ),
                 (
                     "status",
@@ -184,9 +182,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "error_message",
-                    models.TextField(
-                        blank=True, help_text="Error message if execution failed"
-                    ),
+                    models.TextField(blank=True, help_text="Error message if execution failed"),
                 ),
                 (
                     "celery_task_id",
@@ -219,18 +215,10 @@ class Migration(migrations.Migration):
                 "db_table": "transform_executions",
                 "ordering": ["-created_at"],
                 "indexes": [
-                    models.Index(
-                        fields=["status"], name="transform_e_status_f39d33_idx"
-                    ),
-                    models.Index(
-                        fields=["investigation"], name="transform_e_investi_af75c8_idx"
-                    ),
-                    models.Index(
-                        fields=["transform_name"], name="transform_e_transfo_5bf0df_idx"
-                    ),
-                    models.Index(
-                        fields=["celery_task_id"], name="transform_e_celery__1f824b_idx"
-                    ),
+                    models.Index(fields=["status"], name="transform_e_status_f39d33_idx"),
+                    models.Index(fields=["investigation"], name="transform_e_investi_af75c8_idx"),
+                    models.Index(fields=["transform_name"], name="transform_e_transfo_5bf0df_idx"),
+                    models.Index(fields=["celery_task_id"], name="transform_e_celery__1f824b_idx"),
                 ],
             },
         ),
@@ -240,14 +228,10 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="investigation",
-            index=models.Index(
-                fields=["created_by"], name="investigati_created_3f04ea_idx"
-            ),
+            index=models.Index(fields=["created_by"], name="investigati_created_3f04ea_idx"),
         ),
         migrations.AddIndex(
             model_name="investigation",
-            index=models.Index(
-                fields=["created_at"], name="investigati_created_f9b264_idx"
-            ),
+            index=models.Index(fields=["created_at"], name="investigati_created_f9b264_idx"),
         ),
     ]

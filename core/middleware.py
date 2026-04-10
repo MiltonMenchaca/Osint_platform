@@ -29,9 +29,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
 
         # Log request details
         user_id = (
-            getattr(request.user, "id", None)
-            if hasattr(request, "user") and request.user.is_authenticated
-            else None
+            getattr(request.user, "id", None) if hasattr(request, "user") and request.user.is_authenticated else None
         )
 
         # Get client IP
@@ -69,9 +67,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             },
         )
 
-    def process_response(
-        self, request: HttpRequest, response: HttpResponse
-    ) -> HttpResponse:
+    def process_response(self, request: HttpRequest, response: HttpResponse) -> HttpResponse:
         """Process outgoing response"""
 
         if hasattr(request, "start_time"):
@@ -98,9 +94,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
 
             log_level = logging.INFO
             if response.status_code >= 400:
-                log_level = (
-                    logging.WARNING if response.status_code < 500 else logging.ERROR
-                )
+                log_level = logging.WARNING if response.status_code < 500 else logging.ERROR
 
             logger.log(
                 log_level,
@@ -118,16 +112,12 @@ class RequestLoggingMiddleware(MiddlewareMixin):
 
         return response
 
-    def process_exception(
-        self, request: HttpRequest, exception: Exception
-    ) -> Optional[HttpResponse]:
+    def process_exception(self, request: HttpRequest, exception: Exception) -> Optional[HttpResponse]:
         """Process unhandled exceptions"""
 
         duration = time.time() - getattr(request, "start_time", time.time())
         user_id = (
-            getattr(request.user, "id", None)
-            if hasattr(request, "user") and request.user.is_authenticated
-            else None
+            getattr(request.user, "id", None) if hasattr(request, "user") and request.user.is_authenticated else None
         )
 
         logger.error(
@@ -167,18 +157,12 @@ class RateLimitMiddleware(MiddlewareMixin):
         # Determine rate limit based on user type
         if hasattr(request, "user") and request.user.is_authenticated:
             if request.user.is_superuser:
-                limit_config = rate_limits.get(
-                    "superuser", {"requests": 10000, "window": 3600}
-                )
+                limit_config = rate_limits.get("superuser", {"requests": 10000, "window": 3600})
             else:
-                limit_config = rate_limits.get(
-                    "authenticated", {"requests": 1000, "window": 3600}
-                )
+                limit_config = rate_limits.get("authenticated", {"requests": 1000, "window": 3600})
             identifier = f"user:{request.user.id}"
         else:
-            limit_config = rate_limits.get(
-                "anonymous", {"requests": 100, "window": 3600}
-            )
+            limit_config = rate_limits.get("anonymous", {"requests": 100, "window": 3600})
             # Use IP address for anonymous users
             x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
             if x_forwarded_for:
@@ -234,15 +218,11 @@ class APIKeyAuthenticationMiddleware(MiddlewareMixin):
         """Authenticate requests using API key"""
 
         # Only apply to API endpoints that require API key auth
-        if not request.path.startswith("/api/") or request.path.startswith(
-            "/api/auth/"
-        ):
+        if not request.path.startswith("/api/") or request.path.startswith("/api/auth/"):
             return None
 
         # Check for API key in headers
-        api_key = request.META.get("HTTP_X_API_KEY") or request.META.get(
-            "HTTP_AUTHORIZATION"
-        )
+        api_key = request.META.get("HTTP_X_API_KEY") or request.META.get("HTTP_AUTHORIZATION")
 
         if api_key:
             # Remove 'Bearer ' prefix if present
@@ -294,9 +274,7 @@ class APIKeyAuthenticationMiddleware(MiddlewareMixin):
 class SecurityHeadersMiddleware(MiddlewareMixin):
     """Middleware for adding security headers"""
 
-    def process_response(
-        self, request: HttpRequest, response: HttpResponse
-    ) -> HttpResponse:
+    def process_response(self, request: HttpRequest, response: HttpResponse) -> HttpResponse:
         """Add security headers to response"""
 
         # Add security headers
@@ -310,12 +288,8 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             response["Access-Control-Allow-Origin"] = getattr(
                 settings, "CORS_ALLOWED_ORIGINS", ["http://localhost:3000"]
             )[0]
-            response[
-                "Access-Control-Allow-Methods"
-            ] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            response[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, X-API-Key"
+            response["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key"
             response["Access-Control-Max-Age"] = "86400"
 
         return response
@@ -397,9 +371,7 @@ class RequestSizeMiddleware(MiddlewareMixin):
         """Check request size limits"""
 
         # Get max request size from settings
-        max_size = getattr(
-            settings, "MAX_REQUEST_SIZE", 10 * 1024 * 1024
-        )  # 10MB default
+        max_size = getattr(settings, "MAX_REQUEST_SIZE", 10 * 1024 * 1024)  # 10MB default
 
         # Check content length
         content_length = request.META.get("CONTENT_LENGTH")
@@ -430,9 +402,7 @@ class RequestSizeMiddleware(MiddlewareMixin):
 class CacheControlMiddleware(MiddlewareMixin):
     """Middleware for setting cache control headers"""
 
-    def process_response(
-        self, request: HttpRequest, response: HttpResponse
-    ) -> HttpResponse:
+    def process_response(self, request: HttpRequest, response: HttpResponse) -> HttpResponse:
         """Set appropriate cache control headers"""
 
         # Don't cache API responses by default
@@ -445,10 +415,7 @@ class CacheControlMiddleware(MiddlewareMixin):
                 or not request.user.is_authenticated
             ):
                 # Cache public endpoints for a short time
-                if any(
-                    endpoint in request.path
-                    for endpoint in ["/api/transforms/", "/api/tools/"]
-                ):
+                if any(endpoint in request.path for endpoint in ["/api/transforms/", "/api/tools/"]):
                     response["Cache-Control"] = "public, max-age=300"  # 5 minutes
                 else:
                     response["Cache-Control"] = "no-cache, no-store, must-revalidate"

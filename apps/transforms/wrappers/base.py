@@ -126,9 +126,7 @@ class BaseWrapper(ABC):
             except subprocess.TimeoutExpired:
                 process.kill()
                 stdout, stderr = process.communicate()
-                raise ToolTimeoutError(
-                    f"Command timed out after {timeout} seconds: {' '.join(command)}"
-                )
+                raise ToolTimeoutError(f"Command timed out after {timeout} seconds: {' '.join(command)}")
 
             end_time = datetime.now()
             execution_time = (end_time - start_time).total_seconds()
@@ -143,15 +141,11 @@ class BaseWrapper(ABC):
                 "end_time": end_time.isoformat(),
             }
 
-            logger.info(
-                f"Command completed in {execution_time:.2f}s with return code {process.returncode}"
-            )
+            logger.info(f"Command completed in {execution_time:.2f}s with return code {process.returncode}")
 
             if process.returncode != 0:
                 logger.error(f"Command failed: {stderr}")
-                raise ToolExecutionError(
-                    f"Command failed with return code {process.returncode}: {stderr}"
-                )
+                raise ToolExecutionError(f"Command failed with return code {process.returncode}: {stderr}")
 
             return result
 
@@ -222,9 +216,7 @@ class BaseWrapper(ABC):
                 shutil.rmtree(self.temp_dir)
                 logger.debug(f"Cleaned up temp directory: {self.temp_dir}")
             except Exception as e:
-                logger.warning(
-                    f"Could not clean up temp directory {self.temp_dir}: {e}"
-                )
+                logger.warning(f"Could not clean up temp directory {self.temp_dir}: {e}")
             finally:
                 self.temp_dir = None
 
@@ -265,15 +257,12 @@ class BaseWrapper(ABC):
 
         if input_type not in supported_types:
             raise ValueError(
-                f"Input type '{input_type}' not supported. "
-                f"Supported types: {', '.join(supported_types)}"
+                f"Input type '{input_type}' not supported. " f"Supported types: {', '.join(supported_types)}"
             )
 
         return True
 
-    def _format_output(
-        self, results: List[Dict[str, Any]], execution_info: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _format_output(self, results: List[Dict[str, Any]], execution_info: Dict[str, Any]) -> Dict[str, Any]:
         """Format tool output in standard format"""
         metadata: Dict[str, Any] = {
             "execution_time": execution_info.get("execution_time"),

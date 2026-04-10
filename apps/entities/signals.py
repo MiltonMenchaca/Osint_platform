@@ -48,15 +48,11 @@ def entity_pre_save(sender, instance, **kwargs):
             instance.value = "http://" + instance.value
 
     # Auto-detect entity type if not set or if value doesn't match type
-    if not instance.entity_type or not _validate_entity_type(
-        instance.value, instance.entity_type
-    ):
+    if not instance.entity_type or not _validate_entity_type(instance.value, instance.entity_type):
         detected_type = _detect_entity_type(instance.value)
         if detected_type:
             instance.entity_type = detected_type
-            logger.info(
-                f"Auto-detected entity type '{detected_type}' for value '{instance.value}'"
-            )
+            logger.info(f"Auto-detected entity type '{detected_type}' for value '{instance.value}'")
 
 
 @receiver(post_save, sender=Entity)
@@ -94,8 +90,7 @@ def entity_post_delete(sender, instance, **kwargs):
     Handle post-delete actions for Entity model
     """
     logger.info(
-        f"Entity deleted: {instance.entity_type}:{instance.value} "
-        f"from investigation {instance.investigation.name}"
+        f"Entity deleted: {instance.entity_type}:{instance.value} " f"from investigation {instance.investigation.name}"
     )
 
 
@@ -123,9 +118,7 @@ def relationship_post_save(sender, instance, created, **kwargs):
         )
 
         # Save without triggering signals again
-        Relationship.objects.filter(id=instance.id).update(
-            properties=instance.properties
-        )
+        Relationship.objects.filter(id=instance.id).update(properties=instance.properties)
 
 
 def _detect_entity_type(value: str) -> str:
@@ -156,9 +149,7 @@ def _detect_entity_type(value: str) -> str:
         return "url"
 
     # Domain pattern (more restrictive than URL)
-    domain_pattern = (
-        r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+" r"[a-zA-Z]{2,}$"
-    )
+    domain_pattern = r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+" r"[a-zA-Z]{2,}$"
     if re.match(domain_pattern, value):
         return "domain"
 
@@ -213,9 +204,7 @@ def _auto_create_relationships(entity: Entity):
             _create_email_relationships(entity, investigation)
 
     except Exception as e:
-        logger.error(
-            f"Error auto-creating relationships for entity {entity.id}: {str(e)}"
-        )
+        logger.error(f"Error auto-creating relationships for entity {entity.id}: {str(e)}")
 
 
 def _create_domain_relationships(domain_entity: Entity, investigation):
@@ -235,9 +224,7 @@ def _create_domain_relationships(domain_entity: Entity, investigation):
         parent_domain = ".".join(domain_parts[1:])
 
         # Look for parent domain in existing entities
-        parent_entities = Entity.objects.filter(
-            investigation=investigation, entity_type="domain", value=parent_domain
-        )
+        parent_entities = Entity.objects.filter(investigation=investigation, entity_type="domain", value=parent_domain)
 
         for parent_entity in parent_entities:
             # Create subdomain relationship
@@ -248,9 +235,7 @@ def _create_domain_relationships(domain_entity: Entity, investigation):
                 relationship_type="subdomain_of",
                 defaults={"source": "auto_detection", "confidence_score": 0.9},
             )
-            logger.info(
-                f"Auto-created subdomain relationship: {domain_value} -> {parent_domain}"
-            )
+            logger.info(f"Auto-created subdomain relationship: {domain_value} -> {parent_domain}")
 
 
 def _create_ip_relationships(ip_entity: Entity, investigation):
@@ -263,9 +248,7 @@ def _create_ip_relationships(ip_entity: Entity, investigation):
     """
     ip_value = ip_entity.value
 
-    domain_entities = Entity.objects.filter(
-        investigation=investigation, entity_type="domain"
-    )
+    domain_entities = Entity.objects.filter(investigation=investigation, entity_type="domain")
 
     for domain_entity in domain_entities:
         props = domain_entity.properties or {}
@@ -299,9 +282,7 @@ def _create_ip_relationships(ip_entity: Entity, investigation):
                 relationship_type="hosted_on",
                 defaults={"source": "auto_detection", "confidence_score": 0.7},
             )
-            logger.info(
-                f"Auto-created IP relationships: {domain_entity.value} -> {ip_value}"
-            )
+            logger.info(f"Auto-created IP relationships: {domain_entity.value} -> {ip_value}")
 
     ip_props = ip_entity.properties or {}
     hostnames = []
@@ -348,9 +329,7 @@ def _create_email_relationships(email_entity: Entity, investigation):
         domain_part = email_value.split("@")[1]
 
         # Look for existing domain entity
-        domain_entities = Entity.objects.filter(
-            investigation=investigation, entity_type="domain", value=domain_part
-        )
+        domain_entities = Entity.objects.filter(investigation=investigation, entity_type="domain", value=domain_part)
 
         for domain_entity in domain_entities:
             # Create email-domain relationship
@@ -361,9 +340,7 @@ def _create_email_relationships(email_entity: Entity, investigation):
                 relationship_type="associated_with",
                 defaults={"source": "auto_detection", "confidence_score": 0.95},
             )
-            logger.info(
-                f"Auto-created email-domain relationship: {email_value} -> {domain_part}"
-            )
+            logger.info(f"Auto-created email-domain relationship: {email_value} -> {domain_part}")
 
         # If domain doesn't exist, create it
         if not domain_entities.exists():
@@ -384,6 +361,4 @@ def _create_email_relationships(email_entity: Entity, investigation):
                 source="auto_extraction",
                 confidence_score=0.8,
             )
-            logger.info(
-                f"Auto-created domain from email and relationship: {email_value} -> {domain_part}"
-            )
+            logger.info(f"Auto-created domain from email and relationship: {email_value} -> {domain_part}")

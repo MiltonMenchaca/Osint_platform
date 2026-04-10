@@ -34,39 +34,21 @@ class Entity(models.Model):
         related_name="entities",
         help_text="Investigation this entity belongs to",
     )
-    entity_type = models.CharField(
-        max_length=50, choices=ENTITY_TYPE_CHOICES, help_text="Type of the entity"
-    )
+    entity_type = models.CharField(max_length=50, choices=ENTITY_TYPE_CHOICES, help_text="Type of the entity")
     value = models.CharField(
         max_length=500,
         validators=[MinLengthValidator(1)],
         help_text="Primary value of the entity",
     )
-    display_name = models.CharField(
-        max_length=255, blank=True, help_text="Human-readable display name"
-    )
+    display_name = models.CharField(max_length=255, blank=True, help_text="Human-readable display name")
     description = models.TextField(blank=True, help_text="Description of the entity")
-    properties = models.JSONField(
-        default=dict, blank=True, help_text="Additional properties of the entity"
-    )
-    confidence_score = models.FloatField(
-        default=1.0, help_text="Confidence score (0.0 to 1.0)"
-    )
-    source = models.CharField(
-        max_length=255, blank=True, help_text="Source where this entity was discovered"
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="Timestamp when entity was created"
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True, help_text="Timestamp when entity was last updated"
-    )
-    tags = models.JSONField(
-        default=list, blank=True, help_text="Tags associated with this entity"
-    )
-    is_seed = models.BooleanField(
-        default=False, help_text="Whether this entity is a seed entity (starting point)"
-    )
+    properties = models.JSONField(default=dict, blank=True, help_text="Additional properties of the entity")
+    confidence_score = models.FloatField(default=1.0, help_text="Confidence score (0.0 to 1.0)")
+    source = models.CharField(max_length=255, blank=True, help_text="Source where this entity was discovered")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp when entity was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Timestamp when entity was last updated")
+    tags = models.JSONField(default=list, blank=True, help_text="Tags associated with this entity")
+    is_seed = models.BooleanField(default=False, help_text="Whether this entity is a seed entity (starting point)")
 
     class Meta:
         db_table = "entities"
@@ -101,9 +83,7 @@ class Entity(models.Model):
         """Get all relationships involving this entity"""
         from django.db.models import Q
 
-        return Relationship.objects.filter(
-            Q(source_entity=self) | Q(target_entity=self)
-        )
+        return Relationship.objects.filter(Q(source_entity=self) | Q(target_entity=self))
 
     def get_connected_entities(self):
         """Get all entities connected to this entity"""
@@ -191,26 +171,16 @@ class Relationship(models.Model):
         choices=RELATIONSHIP_TYPE_CHOICES,
         help_text="Type of the relationship",
     )
-    description = models.TextField(
-        blank=True, help_text="Description of the relationship"
-    )
-    properties = models.JSONField(
-        default=dict, blank=True, help_text="Additional properties of the relationship"
-    )
-    confidence_score = models.FloatField(
-        default=1.0, help_text="Confidence score (0.0 to 1.0)"
-    )
+    description = models.TextField(blank=True, help_text="Description of the relationship")
+    properties = models.JSONField(default=dict, blank=True, help_text="Additional properties of the relationship")
+    confidence_score = models.FloatField(default=1.0, help_text="Confidence score (0.0 to 1.0)")
     source = models.CharField(
         max_length=255,
         blank=True,
         help_text="Source where this relationship was discovered",
     )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="Timestamp when relationship was created"
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True, help_text="Timestamp when relationship was last updated"
-    )
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp when relationship was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Timestamp when relationship was last updated")
 
     class Meta:
         db_table = "relationships"

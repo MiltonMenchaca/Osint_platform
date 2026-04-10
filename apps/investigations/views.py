@@ -34,24 +34,20 @@ class AutoReconView(generics.GenericAPIView):
     """
     Endpoint to trigger automated reconnaissance
     """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        target = request.data.get('target')
+        target = request.data.get("target")
         investigation_id = request.data.get("investigation_id")
         if not target:
-            return Response(
-                {"error": "Target URL/Domain is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Target URL/Domain is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             service = AutoReconService()
             results = service.run_scan(target)
             if investigation_id:
-                investigation = get_object_or_404(
-                    Investigation, id=investigation_id, created_by=request.user
-                )
+                investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
                 metadata = investigation.metadata or {}
                 metadata["auto_recon"] = results
                 metadata["auto_recon_updated_at"] = timezone.now().isoformat()
@@ -89,10 +85,7 @@ class AutoReconView(generics.GenericAPIView):
                             },
                         )
 
-                existing = {
-                    (e.entity_type, e.value): e
-                    for e in Entity.objects.filter(investigation=investigation)
-                }
+                existing = {(e.entity_type, e.value): e for e in Entity.objects.filter(investigation=investigation)}
 
                 tools = results.get("tools") or {}
                 aggregate_technologies = set()
@@ -343,10 +336,7 @@ class AutoReconView(generics.GenericAPIView):
             return Response(results, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Auto recon failed: {e}")
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(["GET"])
@@ -473,15 +463,13 @@ class ExecuteDorksView(generics.GenericAPIView):
     """
     Endpoint to execute Google Dorks
     """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, investigation_id, *args, **kwargs):
-        dorks = request.data.get('dorks', [])
+        dorks = request.data.get("dorks", [])
         if not dorks:
-            return Response(
-                {"error": "No dorks provided"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "No dorks provided"}, status=status.HTTP_400_BAD_REQUEST)
 
         investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
@@ -496,8 +484,8 @@ class ExecuteDorksView(generics.GenericAPIView):
                 "output_types": ["url"],
                 "tool_name": "google_search",
                 "command_template": "google_search {value}",
-                "is_enabled": True
-            }
+                "is_enabled": True,
+            },
         )
 
         # Find a suitable input entity (e.g. the seed domain)
@@ -508,7 +496,7 @@ class ExecuteDorksView(generics.GenericAPIView):
                 investigation=investigation,
                 entity_type="domain",
                 value=request.data.get("target_domain", "unknown_target"),
-                defaults={"is_seed": True}
+                defaults={"is_seed": True},
             )
 
         execution_ids = []
@@ -521,21 +509,17 @@ class ExecuteDorksView(generics.GenericAPIView):
                 transform_name=transform.name,
                 input_entity=input_entity,
                 status="pending",
-                parameters={"query": query}
+                parameters={"query": query},
             )
 
             # Queue task
-            execute_transform.delay(
-                execution_id=str(execution.id),
-                transform_name=transform.name,
-                input_value=query
-            )
+            execute_transform.delay(execution_id=str(execution.id), transform_name=transform.name, input_value=query)
             execution_ids.append(execution.id)
 
-        return Response({
-            "message": f"Queued {len(execution_ids)} dork searches",
-            "execution_ids": execution_ids
-        }, status=status.HTTP_202_ACCEPTED)
+        return Response(
+            {"message": f"Queued {len(execution_ids)} dork searches", "execution_ids": execution_ids},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class InvestigationDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -564,9 +548,7 @@ class InvestigationDetailView(generics.RetrieveUpdateDestroyAPIView):
         """Log investigation updates"""
         investigation = serializer.save()
 
-        logger.info(
-            f"Investigation '{investigation.name}' updated by user {self.request.user.username}"
-        )
+        logger.info(f"Investigation '{investigation.name}' updated by user {self.request.user.username}")
 
         # Clear caches
         cache_key = f"investigation_{investigation.id}"
@@ -576,9 +558,7 @@ class InvestigationDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         """Log investigation deletion"""
-        logger.info(
-            f"Investigation '{instance.name}' deleted by user {self.request.user.username}"
-        )
+        logger.info(f"Investigation '{instance.name}' deleted by user {self.request.user.username}")
 
         # Clear caches
         cache_key = f"investigation_{instance.id}"
@@ -605,9 +585,7 @@ class TransformExecutionListCreateView(generics.ListCreateAPIView):
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         queryset = TransformExecution.objects.filter(investigation=investigation)
 
@@ -668,13 +646,9 @@ class TransformExecutionListCreateView(generics.ListCreateAPIView):
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
-        execution = serializer.save(
-            investigation=investigation
-        )
+        execution = serializer.save(investigation=investigation)
 
         # Execute transform asynchronously
         task = execute_transform.delay(
@@ -686,9 +660,7 @@ class TransformExecutionListCreateView(generics.ListCreateAPIView):
         execution.celery_task_id = task.id
         execution.save(update_fields=["celery_task_id", "updated_at"])
 
-        logger.info(
-            f"Transform execution {execution.id} created and queued for investigation {investigation.name}"
-        )
+        logger.info(f"Transform execution {execution.id} created and queued for investigation {investigation.name}")
 
 
 class TransformExecutionDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -701,9 +673,7 @@ class TransformExecutionDetailView(generics.RetrieveUpdateDestroyAPIView):
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         return TransformExecution.objects.filter(investigation=investigation).select_related(
             "investigation", "input_entity"
@@ -727,9 +697,7 @@ class TransformExecutionDetailView(generics.RetrieveUpdateDestroyAPIView):
                 "cancelled",
             ]:
                 return Response(
-                    {
-                        "error": "Failed executions can only be reset to pending or cancelled"
-                    },
+                    {"error": "Failed executions can only be reset to pending or cancelled"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -741,9 +709,7 @@ class TransformExecutionDetailView(generics.RetrieveUpdateDestroyAPIView):
 def investigation_stats(request, investigation_id):
     """Get investigation statistics"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     # Check cache first
     cache_key = f"investigation_stats_{investigation_id}"
@@ -766,22 +732,14 @@ def investigation_stats(request, investigation_id):
         },
         "executions": {
             "total": executions.count(),
-            "by_status": dict(
-                executions.values("status")
-                .annotate(count=Count("id"))
-                .values_list("status", "count")
-            ),
-            "recent": executions.filter(
-                created_at__gte=timezone.now() - timedelta(days=7)
-            ).count(),
+            "by_status": dict(executions.values("status").annotate(count=Count("id")).values_list("status", "count")),
+            "recent": executions.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
             "avg_duration": None,
         },
         "entities": {
             "total": entities.count(),
             "by_type": dict(
-                entities.values("entity_type")
-                .annotate(count=Count("id"))
-                .values_list("entity_type", "count")
+                entities.values("entity_type").annotate(count=Count("id")).values_list("entity_type", "count")
             ),
             "confidence_stats": entities.aggregate(
                 avg_confidence=Avg("confidence_score"),
@@ -814,9 +772,7 @@ def investigation_stats(request, investigation_id):
             delta = completed_at - started_at
             total_seconds += delta.total_seconds()
             duration_count += 1
-    stats["executions"]["avg_duration"] = (
-        total_seconds / duration_count if duration_count > 0 else 0
-    )
+    stats["executions"]["avg_duration"] = total_seconds / duration_count if duration_count > 0 else 0
 
     # Cache for 5 minutes
     cache.set(cache_key, stats, 300)
@@ -829,9 +785,7 @@ def investigation_stats(request, investigation_id):
 def bulk_execute_transforms(request, investigation_id):
     """Execute multiple transforms in bulk"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     serializer = BulkExecutionSerializer(data=request.data)
     if serializer.is_valid():
@@ -842,9 +796,7 @@ def bulk_execute_transforms(request, investigation_id):
         input_entity_id = input_payload.get("input_entity_id")
         input_entity = None
         if input_entity_id:
-            input_entity = get_object_or_404(
-                Entity, id=input_entity_id, investigation=investigation
-            )
+            input_entity = get_object_or_404(Entity, id=input_entity_id, investigation=investigation)
         else:
             entity_type = input_payload.get("entity_type")
             value = input_payload.get("value")
@@ -885,9 +837,7 @@ def bulk_execute_transforms(request, investigation_id):
             execution.save(update_fields=["celery_task_id", "updated_at"])
             execution_ids.append(execution.id)
 
-        logger.info(
-            f"Bulk execution of {len(executions)} transforms queued for investigation {investigation.name}"
-        )
+        logger.info(f"Bulk execution of {len(executions)} transforms queued for investigation {investigation.name}")
 
         return Response(
             {
@@ -905,13 +855,9 @@ def bulk_execute_transforms(request, investigation_id):
 def control_execution(request, investigation_id, execution_id):
     """Control transform execution (pause, resume, cancel)"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
-    execution = get_object_or_404(
-        TransformExecution, id=execution_id, investigation=investigation
-    )
+    execution = get_object_or_404(TransformExecution, id=execution_id, investigation=investigation)
 
     serializer = ExecutionControlSerializer(data=request.data)
     if serializer.is_valid():
@@ -928,17 +874,11 @@ def control_execution(request, investigation_id, execution_id):
                     try:
                         from celery import current_app
 
-                        current_app.control.revoke(
-                            execution.celery_task_id, terminate=True
-                        )
+                        current_app.control.revoke(execution.celery_task_id, terminate=True)
                     except Exception as exc:
-                        logger.error(
-                            f"Failed to revoke Celery task {execution.celery_task_id}: {str(exc)}"
-                        )
+                        logger.error(f"Failed to revoke Celery task {execution.celery_task_id}: {str(exc)}")
 
-                logger.info(
-                    f"Execution {execution_id} cancelled by user {request.user.username}"
-                )
+                logger.info(f"Execution {execution_id} cancelled by user {request.user.username}")
 
                 return Response({"message": "Execution cancelled"})
             else:
@@ -966,9 +906,7 @@ def control_execution(request, investigation_id, execution_id):
                 execution.celery_task_id = task.id
                 execution.save(update_fields=["celery_task_id", "updated_at"])
 
-                logger.info(
-                    f"Execution {execution_id} retried by user {request.user.username}"
-                )
+                logger.info(f"Execution {execution_id} retried by user {request.user.username}")
 
                 return Response({"message": "Execution queued for retry"})
             else:
@@ -978,9 +916,7 @@ def control_execution(request, investigation_id, execution_id):
                 )
 
         else:
-            return Response(
-                {"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -996,9 +932,7 @@ def user_investigations_stats(request):
         return Response(cached_stats)
 
     investigations = Investigation.objects.filter(created_by=request.user)
-    executions = TransformExecution.objects.filter(
-        investigation__created_by=request.user
-    )
+    executions = TransformExecution.objects.filter(investigation__created_by=request.user)
     entities = Entity.objects.filter(investigation__created_by=request.user)
     relationships = Relationship.objects.filter(investigation__created_by=request.user)
 
@@ -1006,40 +940,22 @@ def user_investigations_stats(request):
         "investigations": {
             "total": investigations.count(),
             "by_status": dict(
-                investigations.values("status")
-                .annotate(count=Count("id"))
-                .values_list("status", "count")
+                investigations.values("status").annotate(count=Count("id")).values_list("status", "count")
             ),
-            "recent": investigations.filter(
-                created_at__gte=timezone.now() - timedelta(days=30)
-            ).count(),
+            "recent": investigations.filter(created_at__gte=timezone.now() - timedelta(days=30)).count(),
         },
         "executions": {
             "total": executions.count(),
-            "by_status": dict(
-                executions.values("status")
-                .annotate(count=Count("id"))
-                .values_list("status", "count")
-            ),
-            "recent": executions.filter(
-                created_at__gte=timezone.now() - timedelta(days=7)
-            ).count(),
-            "success_rate": (
-                executions.filter(status="completed").count()
-                / max(executions.count(), 1)
-            )
-            * 100,
+            "by_status": dict(executions.values("status").annotate(count=Count("id")).values_list("status", "count")),
+            "recent": executions.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
+            "success_rate": (executions.filter(status="completed").count() / max(executions.count(), 1)) * 100,
         },
         "entities": {
             "total": entities.count(),
             "by_type": dict(
-                entities.values("entity_type")
-                .annotate(count=Count("id"))
-                .values_list("entity_type", "count")
+                entities.values("entity_type").annotate(count=Count("id")).values_list("entity_type", "count")
             ),
-            "avg_confidence": entities.aggregate(
-                avg_confidence=Avg("confidence_score")
-            )["avg_confidence"],
+            "avg_confidence": entities.aggregate(avg_confidence=Avg("confidence_score"))["avg_confidence"],
         },
         "relationships": {
             "total": relationships.count(),
@@ -1048,9 +964,7 @@ def user_investigations_stats(request):
                 .annotate(count=Count("id"))
                 .values_list("relationship_type", "count")
             ),
-            "avg_confidence": relationships.aggregate(
-                avg_confidence=Avg("confidence_score")
-            )["avg_confidence"],
+            "avg_confidence": relationships.aggregate(avg_confidence=Avg("confidence_score"))["avg_confidence"],
         },
     }
 
@@ -1065,20 +979,18 @@ def user_investigations_stats(request):
 def investigation_export(request, investigation_id):
     """Export investigation data"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     # Get all related data
-    executions = TransformExecution.objects.filter(
-        investigation=investigation
-    ).select_related("investigation", "input_entity")
+    executions = TransformExecution.objects.filter(investigation=investigation).select_related(
+        "investigation", "input_entity"
+    )
 
     entities = Entity.objects.filter(investigation=investigation)
 
-    relationships = Relationship.objects.filter(
-        investigation=investigation
-    ).select_related("source_entity", "target_entity")
+    relationships = Relationship.objects.filter(investigation=investigation).select_related(
+        "source_entity", "target_entity"
+    )
 
     # Serialize data
     investigation_data = InvestigationDetailSerializer(investigation).data
@@ -1101,9 +1013,7 @@ def investigation_export(request, investigation_id):
         "exported_by": request.user.username,
     }
 
-    logger.info(
-        f"Investigation {investigation.name} exported by user {request.user.username}"
-    )
+    logger.info(f"Investigation {investigation.name} exported by user {request.user.username}")
 
     return Response(export_data)
 
@@ -1113,13 +1023,9 @@ def investigation_export(request, investigation_id):
 def execution_logs(request, investigation_id, execution_id):
     """Get execution logs and output"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
-    execution = get_object_or_404(
-        TransformExecution, id=execution_id, investigation=investigation
-    )
+    execution = get_object_or_404(TransformExecution, id=execution_id, investigation=investigation)
 
     logs_data = {
         "execution_id": execution.id,

@@ -51,9 +51,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "phone_number",
-                    models.CharField(
-                        blank=True, help_text="User's phone number", max_length=20
-                    ),
+                    models.CharField(blank=True, help_text="User's phone number", max_length=20),
                 ),
                 (
                     "timezone",
@@ -81,33 +79,23 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "api_key_created_at",
-                    models.DateTimeField(
-                        blank=True, help_text="When the API key was created", null=True
-                    ),
+                    models.DateTimeField(blank=True, help_text="When the API key was created", null=True),
                 ),
                 (
                     "last_login_ip",
-                    models.GenericIPAddressField(
-                        blank=True, help_text="IP address of last login", null=True
-                    ),
+                    models.GenericIPAddressField(blank=True, help_text="IP address of last login", null=True),
                 ),
                 (
                     "is_verified",
-                    models.BooleanField(
-                        default=False, help_text="Whether the user's email is verified"
-                    ),
+                    models.BooleanField(default=False, help_text="Whether the user's email is verified"),
                 ),
                 (
                     "created_at",
-                    models.DateTimeField(
-                        auto_now_add=True, help_text="When the profile was created"
-                    ),
+                    models.DateTimeField(auto_now_add=True, help_text="When the profile was created"),
                 ),
                 (
                     "updated_at",
-                    models.DateTimeField(
-                        auto_now=True, help_text="When the profile was last updated"
-                    ),
+                    models.DateTimeField(auto_now=True, help_text="When the profile was last updated"),
                 ),
                 (
                     "user",
@@ -123,12 +111,8 @@ class Migration(migrations.Migration):
                 "ordering": ["-created_at"],
                 "indexes": [
                     models.Index(fields=["role"], name="user_profil_role_fa03e1_idx"),
-                    models.Index(
-                        fields=["organization"], name="user_profil_organiz_608b52_idx"
-                    ),
-                    models.Index(
-                        fields=["api_key"], name="user_profil_api_key_fd3e87_idx"
-                    ),
+                    models.Index(fields=["organization"], name="user_profil_organiz_608b52_idx"),
+                    models.Index(fields=["api_key"], name="user_profil_api_key_fd3e87_idx"),
                 ],
             },
         ),
@@ -146,15 +130,11 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "name",
-                    models.CharField(
-                        help_text="Descriptive name for the token", max_length=255
-                    ),
+                    models.CharField(help_text="Descriptive name for the token", max_length=255),
                 ),
                 (
                     "token",
-                    models.CharField(
-                        help_text="The actual token value", max_length=255, unique=True
-                    ),
+                    models.CharField(help_text="The actual token value", max_length=255, unique=True),
                 ),
                 (
                     "scope",
@@ -171,9 +151,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "is_active",
-                    models.BooleanField(
-                        default=True, help_text="Whether the token is active"
-                    ),
+                    models.BooleanField(default=True, help_text="Whether the token is active"),
                 ),
                 (
                     "expires_at",
@@ -185,9 +163,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "last_used_at",
-                    models.DateTimeField(
-                        blank=True, help_text="When the token was last used", null=True
-                    ),
+                    models.DateTimeField(blank=True, help_text="When the token was last used", null=True),
                 ),
                 (
                     "last_used_ip",
@@ -199,9 +175,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "created_at",
-                    models.DateTimeField(
-                        auto_now_add=True, help_text="When the token was created"
-                    ),
+                    models.DateTimeField(auto_now_add=True, help_text="When the token was created"),
                 ),
                 (
                     "user",
@@ -218,12 +192,8 @@ class Migration(migrations.Migration):
                 "indexes": [
                     models.Index(fields=["token"], name="api_tokens_token_8d7e16_idx"),
                     models.Index(fields=["user"], name="api_tokens_user_id_caf836_idx"),
-                    models.Index(
-                        fields=["is_active"], name="api_tokens_is_acti_949075_idx"
-                    ),
-                    models.Index(
-                        fields=["expires_at"], name="api_tokens_expires_a047d2_idx"
-                    ),
+                    models.Index(fields=["is_active"], name="api_tokens_is_acti_949075_idx"),
+                    models.Index(fields=["expires_at"], name="api_tokens_expires_a047d2_idx"),
                 ],
             },
         ),

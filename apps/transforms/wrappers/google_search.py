@@ -45,8 +45,7 @@ class GoogleSearchWrapper(BaseWrapper):
             " (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0",
             # Linux
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" " (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
             "Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
             # Mobile
             "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36"
@@ -208,11 +207,7 @@ class GoogleSearchWrapper(BaseWrapper):
                 if len(full_text) > len(title):
                     snippet = full_text.replace(title, "").strip()[:200] + "..."
 
-            results.append({
-                "type": "url",
-                "value": href,
-                "properties": {"title": title, "snippet": snippet}
-            })
+            results.append({"type": "url", "value": href, "properties": {"title": title, "snippet": snippet}})
             processed_urls.add(href)
 
         # Strategy 2: div.g fallback
@@ -234,11 +229,7 @@ class GoogleSearchWrapper(BaseWrapper):
                     snippet_tag = div.select_one("div.s") or div.select_one("div.VwiC3b") or div.select_one("span.st")
                     snippet = snippet_tag.get_text() if snippet_tag else ""
 
-                    results.append({
-                        "type": "url",
-                        "value": href,
-                        "properties": {"title": title, "snippet": snippet}
-                    })
+                    results.append({"type": "url", "value": href, "properties": {"title": title, "snippet": snippet}})
                     processed_urls.add(href)
 
         return results
@@ -256,14 +247,13 @@ class GoogleSearchWrapper(BaseWrapper):
                     logger.info(f"DDGS returned {len(ddg_results)} results")
 
                     for r in ddg_results:
-                        results.append({
-                            "type": "url",
-                            "value": r.get('href'),
-                            "properties": {
-                                "title": r.get('title'),
-                                "snippet": r.get('body')
+                        results.append(
+                            {
+                                "type": "url",
+                                "value": r.get("href"),
+                                "properties": {"title": r.get("title"), "snippet": r.get("body")},
                             }
-                        })
+                        )
 
                 if results:
                     logger.info(f"Found {len(results)} results via DuckDuckGo library")
@@ -295,13 +285,10 @@ class GoogleSearchWrapper(BaseWrapper):
 
     def _scrape_duckduckgo_html(self, query: str, num_results: int) -> List[Dict[str, Any]]:
         results = []
-        headers = {
-            "User-Agent": random.choice(self.user_agents),
-            "Referer": "https://duckduckgo.com/"
-        }
+        headers = {"User-Agent": random.choice(self.user_agents), "Referer": "https://duckduckgo.com/"}
 
         url = "https://html.duckduckgo.com/html/"
-        data = {'q': query}
+        data = {"q": query}
 
         # Random delay
         time.sleep(random.uniform(1.0, 3.0))
@@ -346,14 +333,7 @@ class GoogleSearchWrapper(BaseWrapper):
             if "duckduckgo.com" in href:
                 continue
 
-            results.append({
-                "type": "url",
-                "value": href,
-                "properties": {
-                    "title": title,
-                    "snippet": snippet
-                }
-            })
+            results.append({"type": "url", "value": href, "properties": {"title": title, "snippet": snippet}})
 
         return results
 
@@ -379,7 +359,7 @@ class GoogleSearchWrapper(BaseWrapper):
         }
 
         url = "https://lite.duckduckgo.com/lite/"
-        data = {'q': query}
+        data = {"q": query}
 
         logger.info(f"Requesting DDG Lite: {url}")
         time.sleep(random.uniform(1.0, 2.0))
@@ -420,26 +400,16 @@ class GoogleSearchWrapper(BaseWrapper):
                         if snippet_td:
                             snippet = snippet_td.get_text(strip=True)
 
-            results.append({
-                "type": "url",
-                "value": href,
-                "properties": {
-                    "title": title,
-                    "snippet": snippet
-                }
-            })
+            results.append({"type": "url", "value": href, "properties": {"title": title, "snippet": snippet}})
 
         return results
 
     def _scrape_yahoo(self, query: str, num_results: int) -> List[Dict[str, Any]]:
         results = []
-        headers = {
-            "User-Agent": random.choice(self.user_agents),
-            "Referer": "https://search.yahoo.com/"
-        }
+        headers = {"User-Agent": random.choice(self.user_agents), "Referer": "https://search.yahoo.com/"}
 
         url = "https://search.yahoo.com/search"
-        params = {'p': query, 'n': num_results}
+        params = {"p": query, "n": num_results}
 
         logger.info(f"Requesting Yahoo: {url}")
         time.sleep(random.uniform(1.0, 3.0))
@@ -484,13 +454,6 @@ class GoogleSearchWrapper(BaseWrapper):
             snippet_tag = div.select_one("div.compText") or div.select_one("p.lh-16")
             snippet = snippet_tag.get_text(strip=True) if snippet_tag else "No snippet available"
 
-            results.append({
-                "type": "url",
-                "value": href,
-                "properties": {
-                    "title": title,
-                    "snippet": snippet
-                }
-            })
+            results.append({"type": "url", "value": href, "properties": {"title": title, "snippet": snippet}})
 
         return results

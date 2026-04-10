@@ -50,9 +50,7 @@ class EntityListCreateView(generics.ListCreateAPIView):
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         queryset = Entity.objects.filter(investigation=investigation)
 
@@ -60,9 +58,7 @@ class EntityListCreateView(generics.ListCreateAPIView):
         search = self.request.query_params.get("search")
         if search:
             queryset = queryset.filter(
-                Q(display_name__icontains=search)
-                | Q(value__icontains=search)
-                | Q(description__icontains=search)
+                Q(display_name__icontains=search) | Q(value__icontains=search) | Q(description__icontains=search)
             )
 
         # Filter by entity type
@@ -143,9 +139,7 @@ class EntityListCreateView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         """Create a new entity or update existing one (deduplication)"""
         investigation_id = self.kwargs.get("investigation_id")
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -179,15 +173,11 @@ class EntityListCreateView(generics.ListCreateAPIView):
 
         # We fetch investigation again here or could pass it if we refactored,
         # but for safety let's just get it (cached by DB query usually)
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         entity = serializer.save(investigation=investigation)
 
-        logger.info(
-            f"Entity '{entity.display_name or entity.value}' created in investigation {investigation.name}"
-        )
+        logger.info(f"Entity '{entity.display_name or entity.value}' created in investigation {investigation.name}")
 
         # Clear investigation cache
         cache_key = f"investigation_entities_{investigation_id}"
@@ -208,9 +198,7 @@ class EntityDetailView(generics.RetrieveUpdateDestroyAPIView):
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         return (
             Entity.objects.filter(investigation=investigation)
@@ -267,9 +255,7 @@ class RelationshipListCreateView(generics.ListCreateAPIView):
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         queryset = Relationship.objects.filter(investigation=investigation)
 
@@ -364,18 +350,14 @@ class RelationshipListCreateView(generics.ListCreateAPIView):
         else:
             queryset = queryset.order_by("-created_at")
 
-        return queryset.select_related(
-            "investigation", "source_entity", "target_entity"
-        )
+        return queryset.select_related("investigation", "source_entity", "target_entity")
 
     def perform_create(self, serializer):
         """Set the investigation for the relationship"""
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         relationship = serializer.save(investigation=investigation)
 
@@ -400,9 +382,7 @@ class RelationshipDetailView(generics.RetrieveUpdateDestroyAPIView):
         investigation_id = self.kwargs.get("investigation_id")
 
         # Verify user owns the investigation
-        investigation = get_object_or_404(
-            Investigation, id=investigation_id, created_by=self.request.user
-        )
+        investigation = get_object_or_404(Investigation, id=investigation_id, created_by=self.request.user)
 
         return Relationship.objects.filter(investigation=investigation).select_related(
             "investigation", "source_entity", "target_entity"
@@ -443,9 +423,7 @@ class RelationshipDetailView(generics.RetrieveUpdateDestroyAPIView):
 def entity_stats(request, investigation_id):
     """Get entity statistics for an investigation"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     # Check cache first
     cache_key = f"entity_stats_{investigation_id}"
@@ -465,9 +443,7 @@ def entity_stats(request, investigation_id):
         "entities": {
             "total": total_entities,
             "by_type": dict(
-                entities.values("entity_type")
-                .annotate(count=Count("id"))
-                .values_list("entity_type", "count")
+                entities.values("entity_type").annotate(count=Count("id")).values_list("entity_type", "count")
             ),
             "verified": verified_entities,
             "unverified": max(total_entities - verified_entities, 0),
@@ -476,9 +452,7 @@ def entity_stats(request, investigation_id):
                 max_confidence=Max("confidence_score"),
                 min_confidence=Min("confidence_score"),
             ),
-            "recent": entities.filter(
-                created_at__gte=timezone.now() - timedelta(days=7)
-            ).count(),
+            "recent": entities.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
         },
         "relationships": {
             "total": total_relationships,
@@ -494,24 +468,16 @@ def entity_stats(request, investigation_id):
                 max_confidence=Max("confidence_score"),
                 min_confidence=Min("confidence_score"),
             ),
-            "recent": relationships.filter(
-                created_at__gte=timezone.now() - timedelta(days=7)
-            ).count(),
+            "recent": relationships.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
         },
         "network": {
             "nodes": total_entities,
             "edges": total_relationships,
             "density": (
-                total_relationships
-                / max((total_entities * (total_entities - 1)) / 2, 1)
-            )
-            if total_entities > 1
-            else 0,
+                (total_relationships / max((total_entities * (total_entities - 1)) / 2, 1)) if total_entities > 1 else 0
+            ),
             "most_connected_entities": list(
-                entities.annotate(
-                    connection_count=Count("source_relationships")
-                    + Count("target_relationships")
-                )
+                entities.annotate(connection_count=Count("source_relationships") + Count("target_relationships"))
                 .order_by("-connection_count")[:5]
                 .values("id", "display_name", "value", "entity_type", "connection_count")
             ),
@@ -534,9 +500,7 @@ def geo_events(request):
         limit = 200
     limit = max(1, min(limit, 500))
 
-    entities = Entity.objects.filter(investigation__created_by=request.user).order_by(
-        "-created_at"
-    )
+    entities = Entity.objects.filter(investigation__created_by=request.user).order_by("-created_at")
     events = []
 
     def extract_lat_lng(entity):
@@ -589,9 +553,7 @@ def geo_events(request):
 def bulk_create_entities(request, investigation_id):
     """Create multiple entities in bulk"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     serializer = BulkEntityCreateSerializer(data=request.data)
     if serializer.is_valid():
@@ -603,9 +565,7 @@ def bulk_create_entities(request, investigation_id):
             entity = Entity.objects.create(investigation=investigation, **entity_data)
             entities.append(entity)
 
-        logger.info(
-            f"Bulk created {len(entities)} entities in investigation {investigation.name}"
-        )
+        logger.info(f"Bulk created {len(entities)} entities in investigation {investigation.name}")
 
         # Clear cache
         cache_key = f"investigation_entities_{investigation_id}"
@@ -630,20 +590,14 @@ def bulk_create_entities(request, investigation_id):
 def entity_relationships(request, investigation_id, entity_id):
     """Get all relationships for a specific entity"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     entity = get_object_or_404(Entity, id=entity_id, investigation=investigation)
 
     # Get relationships where entity is source or target
-    source_relationships = Relationship.objects.filter(
-        source_entity=entity
-    ).select_related("target_entity")
+    source_relationships = Relationship.objects.filter(source_entity=entity).select_related("target_entity")
 
-    target_relationships = Relationship.objects.filter(
-        target_entity=entity
-    ).select_related("source_entity")
+    target_relationships = Relationship.objects.filter(target_entity=entity).select_related("source_entity")
 
     # Serialize relationships
     source_data = RelationshipListSerializer(source_relationships, many=True).data
@@ -664,9 +618,7 @@ def entity_relationships(request, investigation_id, entity_id):
 def merge_entities(request, investigation_id):
     """Merge multiple entities into one"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     entity_ids = request.data.get("entity_ids", [])
     target_entity_id = request.data.get("target_entity_id")
@@ -692,9 +644,7 @@ def merge_entities(request, investigation_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    target_entity = get_object_or_404(
-        Entity, id=target_entity_id, investigation=investigation
-    )
+    target_entity = get_object_or_404(Entity, id=target_entity_id, investigation=investigation)
 
     if target_entity.id not in entity_ids:
         return Response(
@@ -708,14 +658,10 @@ def merge_entities(request, investigation_id):
     # Update relationships to point to target entity
     for entity in entities_to_merge:
         # Update source relationships
-        Relationship.objects.filter(source_entity=entity).update(
-            source_entity=target_entity
-        )
+        Relationship.objects.filter(source_entity=entity).update(source_entity=target_entity)
 
         # Update target relationships
-        Relationship.objects.filter(target_entity=entity).update(
-            target_entity=target_entity
-        )
+        Relationship.objects.filter(target_entity=entity).update(target_entity=target_entity)
 
     # Merge metadata and properties
     merged_metadata = target_entity.metadata or {}
@@ -760,9 +706,7 @@ def merge_entities(request, investigation_id):
 def entity_graph(request, investigation_id):
     """Get graph data for visualization"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     # Get limit from query params
     try:
@@ -777,9 +721,11 @@ def entity_graph(request, investigation_id):
         return Response(cached_graph)
 
     # Get entities, prioritize by connectivity (degree centrality)
-    entities_qs = Entity.objects.filter(investigation=investigation).annotate(
-        degree=Count("source_relationships") + Count("target_relationships")
-    ).order_by("-degree", "-created_at")
+    entities_qs = (
+        Entity.objects.filter(investigation=investigation)
+        .annotate(degree=Count("source_relationships") + Count("target_relationships"))
+        .order_by("-degree", "-created_at")
+    )
 
     if limit > 0:
         entities_qs = entities_qs[:limit]
@@ -790,9 +736,7 @@ def entity_graph(request, investigation_id):
 
     # Get relationships only between selected entities
     relationships = Relationship.objects.filter(
-        investigation=investigation,
-        source_entity__id__in=entity_ids,
-        target_entity__id__in=entity_ids
+        investigation=investigation, source_entity__id__in=entity_ids, target_entity__id__in=entity_ids
     ).select_related("source_entity", "target_entity")
 
     # Build graph data
@@ -808,7 +752,7 @@ def entity_graph(request, investigation_id):
                 "confidence": entity.confidence_score,
                 "verified": bool((entity.properties or {}).get("verified")),
                 "properties": entity.properties or {},
-                "degree": getattr(entity, 'degree', 0)
+                "degree": getattr(entity, "degree", 0),
             }
         )
 
@@ -849,9 +793,7 @@ def entity_graph(request, investigation_id):
 def validate_entities(request, investigation_id):
     """Validate entities in an investigation"""
     # Verify user owns the investigation
-    investigation = get_object_or_404(
-        Investigation, id=investigation_id, created_by=request.user
-    )
+    investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
     entities = Entity.objects.filter(investigation=investigation)
 
@@ -897,9 +839,7 @@ def validate_entities(request, investigation_id):
         elif entity.entity_type == "domain":
             import re
 
-            domain_pattern = (
-                r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.[a-zA-Z]{2,}$"
-            )
+            domain_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.[a-zA-Z]{2,}$"
             if not re.match(domain_pattern, entity.value):
                 issues.append("Invalid domain format")
 

@@ -89,9 +89,7 @@ def add_threat_intel_transforms(apps, schema_editor):
 
 def remove_threat_intel_transforms(apps, schema_editor):
     Transform = apps.get_model("transforms", "Transform")
-    Transform.objects.filter(
-        name__in=["virustotal", "securitytrails", "censys", "hibp", "dehashed"]
-    ).delete()
+    Transform.objects.filter(name__in=["virustotal", "securitytrails", "censys", "hibp", "dehashed"]).delete()
 
 
 class Migration(migrations.Migration):

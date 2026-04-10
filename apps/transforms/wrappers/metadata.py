@@ -43,13 +43,15 @@ class ExifToolWrapper(BaseWrapper):
                     # Convert to flat properties
                     properties = {k: v for k, v in file_info.items()}
 
-                    metadata_results.append({
-                        "type": "other",
-                        "value": f"Metadata: {input_value}",
-                        "source": "exiftool",
-                        "confidence": 1.0,
-                        "properties": properties
-                    })
+                    metadata_results.append(
+                        {
+                            "type": "other",
+                            "value": f"Metadata: {input_value}",
+                            "source": "exiftool",
+                            "confidence": 1.0,
+                            "properties": properties,
+                        }
+                    )
         except Exception as e:
             logger.error(f"Failed to parse exiftool output: {e}")
 

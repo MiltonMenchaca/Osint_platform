@@ -25,6 +25,7 @@ class AutoReconService:
 
         try:
             from apps.transforms.wrappers.web_enum import WhoisWrapper
+
             self.whois = self._safe_wrapper(WhoisWrapper, "whois")
         except ImportError:
             self.whois = None
@@ -81,10 +82,10 @@ class AutoReconService:
             logger.info("[+] Running Whois...")
             try:
                 whois_res = self.whois.execute({"type": "domain", "value": domain})
-                results['tools']['whois'] = whois_res
+                results["tools"]["whois"] = whois_res
             except Exception as e:
                 logger.error(f"Whois failed: {e}")
-                results['tools']['whois'] = {"error": str(e)}
+                results["tools"]["whois"] = {"error": str(e)}
         else:
             results["tools"]["whois"] = {"error": "Herramienta no disponible"}
 

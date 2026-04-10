@@ -24,36 +24,16 @@ class UserProfile(models.Model):
         default="analyst",
         help_text="User role in the platform",
     )
-    organization = models.CharField(
-        max_length=255, blank=True, help_text="Organization the user belongs to"
-    )
-    phone_number = models.CharField(
-        max_length=20, blank=True, help_text="User's phone number"
-    )
-    timezone = models.CharField(
-        max_length=50, default="UTC", help_text="User's preferred timezone"
-    )
-    preferences = models.JSONField(
-        default=dict, blank=True, help_text="User preferences and settings"
-    )
-    api_key = models.CharField(
-        max_length=255, blank=True, help_text="API key for programmatic access"
-    )
-    api_key_created_at = models.DateTimeField(
-        null=True, blank=True, help_text="When the API key was created"
-    )
-    last_login_ip = models.GenericIPAddressField(
-        null=True, blank=True, help_text="IP address of last login"
-    )
-    is_verified = models.BooleanField(
-        default=False, help_text="Whether the user's email is verified"
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="When the profile was created"
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True, help_text="When the profile was last updated"
-    )
+    organization = models.CharField(max_length=255, blank=True, help_text="Organization the user belongs to")
+    phone_number = models.CharField(max_length=20, blank=True, help_text="User's phone number")
+    timezone = models.CharField(max_length=50, default="UTC", help_text="User's preferred timezone")
+    preferences = models.JSONField(default=dict, blank=True, help_text="User preferences and settings")
+    api_key = models.CharField(max_length=255, blank=True, help_text="API key for programmatic access")
+    api_key_created_at = models.DateTimeField(null=True, blank=True, help_text="When the API key was created")
+    last_login_ip = models.GenericIPAddressField(null=True, blank=True, help_text="IP address of last login")
+    is_verified = models.BooleanField(default=False, help_text="Whether the user's email is verified")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="When the profile was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="When the profile was last updated")
 
     class Meta:
         db_table = "user_profiles"
@@ -130,30 +110,18 @@ class APIToken(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="api_tokens")
     name = models.CharField(max_length=255, help_text="Descriptive name for the token")
-    token = models.CharField(
-        max_length=255, unique=True, help_text="The actual token value"
-    )
+    token = models.CharField(max_length=255, unique=True, help_text="The actual token value")
     scope = models.CharField(
         max_length=20,
         choices=SCOPE_CHOICES,
         default="read",
         help_text="Scope of permissions for this token",
     )
-    is_active = models.BooleanField(
-        default=True, help_text="Whether the token is active"
-    )
-    expires_at = models.DateTimeField(
-        null=True, blank=True, help_text="When the token expires (null = never)"
-    )
-    last_used_at = models.DateTimeField(
-        null=True, blank=True, help_text="When the token was last used"
-    )
-    last_used_ip = models.GenericIPAddressField(
-        null=True, blank=True, help_text="IP address where token was last used"
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="When the token was created"
-    )
+    is_active = models.BooleanField(default=True, help_text="Whether the token is active")
+    expires_at = models.DateTimeField(null=True, blank=True, help_text="When the token expires (null = never)")
+    last_used_at = models.DateTimeField(null=True, blank=True, help_text="When the token was last used")
+    last_used_ip = models.GenericIPAddressField(null=True, blank=True, help_text="IP address where token was last used")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="When the token was created")
 
     class Meta:
         db_table = "api_tokens"

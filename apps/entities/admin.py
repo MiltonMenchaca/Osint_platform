@@ -41,9 +41,7 @@ class EntityAdmin(admin.ModelAdmin):
 
     def investigation_link(self, obj):
         """Display investigation as a link"""
-        url = reverse(
-            "admin:investigations_investigation_change", args=[obj.investigation.id]
-        )
+        url = reverse("admin:investigations_investigation_change", args=[obj.investigation.id])
         return format_html('<a href="{}">{}</a>', url, obj.investigation.name)
 
     investigation_link.short_description = "Investigation"
@@ -52,9 +50,7 @@ class EntityAdmin(admin.ModelAdmin):
         """Display count of relationships for this entity"""
         count = obj.source_relationships.count() + obj.target_relationships.count()
         if count > 0:
-            return format_html(
-                '<span style="color: #0066cc; font-weight: bold;">{}</span>', count
-            )
+            return format_html('<span style="color: #0066cc; font-weight: bold;">{}</span>', count)
         return "0"
 
     relationships_count.short_description = "Relationships"
@@ -65,9 +61,7 @@ class EntityAdmin(admin.ModelAdmin):
             super()
             .get_queryset(request)
             .select_related("investigation")
-            .annotate(
-                rel_count=Count("source_relationships") + Count("target_relationships")
-            )
+            .annotate(rel_count=Count("source_relationships") + Count("target_relationships"))
         )
 
     actions = ["merge_duplicate_entities", "update_confidence_scores"]
@@ -78,9 +72,7 @@ class EntityAdmin(admin.ModelAdmin):
 
         # Group entities by type and value
         duplicates = (
-            queryset.values("entity_type", "value", "investigation")
-            .annotate(count=Count("id"))
-            .filter(count__gt=1)
+            queryset.values("entity_type", "value", "investigation").annotate(count=Count("id")).filter(count__gt=1)
         )
 
         merged_count = 0
@@ -119,9 +111,7 @@ class EntityAdmin(admin.ModelAdmin):
                 primary_entity.save()
 
         if merged_count > 0:
-            self.message_user(
-                request, f"Successfully merged {merged_count} duplicate entities."
-            )
+            self.message_user(request, f"Successfully merged {merged_count} duplicate entities.")
         else:
             self.message_user(request, "No duplicate entities found to merge.")
 
@@ -148,10 +138,7 @@ class EntityAdmin(admin.ModelAdmin):
             source_score = source_scores.get(entity.source.lower(), 0.5)
 
             # Relationship-based scoring (more relationships = higher confidence)
-            relationship_count = (
-                entity.source_relationships.count()
-                + entity.target_relationships.count()
-            )
+            relationship_count = entity.source_relationships.count() + entity.target_relationships.count()
             relationship_bonus = min(relationship_count * 0.1, 0.3)
 
             # Calculate final score
@@ -163,9 +150,7 @@ class EntityAdmin(admin.ModelAdmin):
                 updated_count += 1
 
         if updated_count > 0:
-            self.message_user(
-                request, f"Updated confidence scores for {updated_count} entities."
-            )
+            self.message_user(request, f"Updated confidence scores for {updated_count} entities.")
         else:
             self.message_user(request, "No entities required confidence score updates.")
 
@@ -223,8 +208,7 @@ class RelationshipAdmin(admin.ModelAdmin):
         return format_html(
             '<span style="color: #0066cc;">{}</span>: {}',
             obj.source_entity.entity_type,
-            obj.source_entity.value[:50]
-            + ("..." if len(obj.source_entity.value) > 50 else ""),
+            obj.source_entity.value[:50] + ("..." if len(obj.source_entity.value) > 50 else ""),
         )
 
     source_entity_display.short_description = "Source Entity"
@@ -234,28 +218,21 @@ class RelationshipAdmin(admin.ModelAdmin):
         return format_html(
             '<span style="color: #cc6600;">{}</span>: {}',
             obj.target_entity.entity_type,
-            obj.target_entity.value[:50]
-            + ("..." if len(obj.target_entity.value) > 50 else ""),
+            obj.target_entity.value[:50] + ("..." if len(obj.target_entity.value) > 50 else ""),
         )
 
     target_entity_display.short_description = "Target Entity"
 
     def investigation_link(self, obj):
         """Display investigation as a link"""
-        url = reverse(
-            "admin:investigations_investigation_change", args=[obj.investigation.id]
-        )
+        url = reverse("admin:investigations_investigation_change", args=[obj.investigation.id])
         return format_html('<a href="{}">{}</a>', url, obj.investigation.name)
 
     investigation_link.short_description = "Investigation"
 
     def get_queryset(self, request):
         """Optimize queryset with select_related"""
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("investigation", "source_entity", "target_entity")
-        )
+        return super().get_queryset(request).select_related("investigation", "source_entity", "target_entity")
 
     actions = ["remove_duplicate_relationships", "update_relationship_confidence"]
 
@@ -265,9 +242,7 @@ class RelationshipAdmin(admin.ModelAdmin):
 
         # Find duplicates
         duplicates = (
-            queryset.values(
-                "investigation", "source_entity", "target_entity", "relationship_type"
-            )
+            queryset.values("investigation", "source_entity", "target_entity", "relationship_type")
             .annotate(count=Count("id"))
             .filter(count__gt=1)
         )
@@ -290,9 +265,7 @@ class RelationshipAdmin(admin.ModelAdmin):
                     removed_count += 1
 
         if removed_count > 0:
-            self.message_user(
-                request, f"Removed {removed_count} duplicate relationships."
-            )
+            self.message_user(request, f"Removed {removed_count} duplicate relationships.")
         else:
             self.message_user(request, "No duplicate relationships found.")
 
@@ -321,8 +294,7 @@ class RelationshipAdmin(admin.ModelAdmin):
 
             # Adjust based on entity confidence scores
             entity_avg_confidence = (
-                relationship.source_entity.confidence_score
-                + relationship.target_entity.confidence_score
+                relationship.source_entity.confidence_score + relationship.target_entity.confidence_score
             ) / 2
 
             # Weight the relationship confidence with entity confidence
@@ -334,12 +306,8 @@ class RelationshipAdmin(admin.ModelAdmin):
                 updated_count += 1
 
         if updated_count > 0:
-            self.message_user(
-                request, f"Updated confidence scores for {updated_count} relationships."
-            )
+            self.message_user(request, f"Updated confidence scores for {updated_count} relationships.")
         else:
-            self.message_user(
-                request, "No relationships required confidence score updates."
-            )
+            self.message_user(request, "No relationships required confidence score updates.")
 
     update_relationship_confidence.short_description = "Update relationship confidence"

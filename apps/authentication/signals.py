@@ -28,15 +28,10 @@ def create_user_profile(sender, instance, created, **kwargs):
                 },
             )
 
-            logger.info(
-                f"Created user profile for user: {instance.username} "
-                f"(ID: {instance.id})"
-            )
+            logger.info(f"Created user profile for user: {instance.username} " f"(ID: {instance.id})")
 
         except Exception as e:
-            logger.error(
-                f"Error creating user profile for {instance.username}: {str(e)}"
-            )
+            logger.error(f"Error creating user profile for {instance.username}: {str(e)}")
 
 
 @receiver(post_save, sender=UserProfile)
@@ -59,10 +54,7 @@ def user_profile_post_save(sender, instance, created, **kwargs):
                 f"(Role: {instance.role}, Organization: {instance.organization})"
             )
         else:
-            logger.info(
-                f"User profile updated: {instance.user.username} "
-                f"(Role: {instance.role})"
-            )
+            logger.info(f"User profile updated: {instance.user.username} " f"(Role: {instance.role})")
 
         # Update user permissions based on role
         _update_user_permissions(instance)
@@ -72,9 +64,7 @@ def user_profile_post_save(sender, instance, created, **kwargs):
             _send_role_change_notification(instance)
 
     except Exception as e:
-        logger.error(
-            f"Error in user_profile post_save signal for {instance.user.username}: {str(e)}"
-        )
+        logger.error(f"Error in user_profile post_save signal for {instance.user.username}: {str(e)}")
 
 
 @receiver(pre_delete, sender=UserProfile)
@@ -94,9 +84,7 @@ def user_profile_pre_delete(sender, instance, **kwargs):
             revoked_count += 1
 
         if revoked_count > 0:
-            logger.info(
-                f"Revoked {revoked_count} API tokens for user {instance.user.username}"
-            )
+            logger.info(f"Revoked {revoked_count} API tokens for user {instance.user.username}")
 
         # Clear caches
         cache_key = f"user_profile_{instance.user.id}"
@@ -108,9 +96,7 @@ def user_profile_pre_delete(sender, instance, **kwargs):
         logger.info(f"User profile deleted: {instance.user.username}")
 
     except Exception as e:
-        logger.error(
-            f"Error in user_profile pre_delete signal for {instance.user.username}: {str(e)}"
-        )
+        logger.error(f"Error in user_profile pre_delete signal for {instance.user.username}: {str(e)}")
 
 
 @receiver(post_save, sender=APIToken)
@@ -128,8 +114,7 @@ def api_token_post_save(sender, instance, created, **kwargs):
 
         if created:
             logger.info(
-                f"API token created: {instance.name} for user {instance.user.username} "
-                f"(Scope: {instance.scope})"
+                f"API token created: {instance.name} for user {instance.user.username} " f"(Scope: {instance.scope})"
             )
 
             # Send notification if user has email notifications enabled
@@ -137,17 +122,13 @@ def api_token_post_save(sender, instance, created, **kwargs):
             if profile is not None and getattr(profile, "email_notifications", False):
                 _send_token_created_notification(instance)
         else:
-            logger.info(
-                f"API token updated: {instance.name} for user {instance.user.username}"
-            )
+            logger.info(f"API token updated: {instance.name} for user {instance.user.username}")
 
         # Check for security concerns
         _check_token_security(instance)
 
     except Exception as e:
-        logger.error(
-            f"Error in api_token post_save signal for {instance.name}: {str(e)}"
-        )
+        logger.error(f"Error in api_token post_save signal for {instance.name}: {str(e)}")
 
 
 @receiver(post_delete, sender=APIToken)
@@ -161,9 +142,7 @@ def api_token_post_delete(sender, instance, **kwargs):
         cache.delete(cache_key)
         cache.delete("active_api_tokens")
 
-        logger.info(
-            f"API token deleted: {instance.name} for user {instance.user.username}"
-        )
+        logger.info(f"API token deleted: {instance.name} for user {instance.user.username}")
 
         # Send notification if user has email notifications enabled
         profile = getattr(instance.user, "profile", None)
@@ -171,9 +150,7 @@ def api_token_post_delete(sender, instance, **kwargs):
             _send_token_deleted_notification(instance)
 
     except Exception as e:
-        logger.error(
-            f"Error in api_token post_delete signal for {instance.name}: {str(e)}"
-        )
+        logger.error(f"Error in api_token post_delete signal for {instance.name}: {str(e)}")
 
 
 def _update_user_permissions(user_profile):
@@ -207,22 +184,16 @@ def _update_user_permissions(user_profile):
             },
         }
 
-        permissions = role_permissions.get(
-            user_profile.role, role_permissions["viewer"]
-        )
+        permissions = role_permissions.get(user_profile.role, role_permissions["viewer"])
 
         # Update user flags (but don't override superuser status)
         if not user.is_superuser:
             User.objects.filter(id=user.id).update(is_staff=permissions["is_staff"])
 
-        logger.debug(
-            f"Updated permissions for user {user.username} with role {user_profile.role}"
-        )
+        logger.debug(f"Updated permissions for user {user.username} with role {user_profile.role}")
 
     except Exception as e:
-        logger.error(
-            f"Error updating permissions for user {user_profile.user.username}: {str(e)}"
-        )
+        logger.error(f"Error updating permissions for user {user_profile.user.username}: {str(e)}")
 
 
 def _send_welcome_email(user):
@@ -400,8 +371,7 @@ def _check_token_security(api_token):
         # Log warnings
         for warning in warnings:
             logger.warning(
-                f"Security concern for token '{api_token.name}' "
-                f"(User: {api_token.user.username}): {warning}"
+                f"Security concern for token '{api_token.name}' " f"(User: {api_token.user.username}): {warning}"
             )
 
     except Exception as e:
@@ -413,9 +383,7 @@ def cleanup_expired_tokens():
     Cleanup expired API tokens
     """
     try:
-        expired_tokens = APIToken.objects.filter(
-            expires_at__lt=timezone.now(), is_active=True
-        )
+        expired_tokens = APIToken.objects.filter(expires_at__lt=timezone.now(), is_active=True)
 
         count = expired_tokens.count()
         if count > 0:
@@ -448,19 +416,13 @@ def get_user_statistics():
         )
 
         # Role distribution
-        role_distribution = (
-            UserProfile.objects.values("role")
-            .annotate(count=Count("id"))
-            .order_by("-count")
-        )
+        role_distribution = UserProfile.objects.values("role").annotate(count=Count("id")).order_by("-count")
 
         # Token statistics
         token_stats = APIToken.objects.aggregate(
             total_tokens=Count("id"),
             active_tokens=Count("id", filter=Q(is_active=True)),
-            expired_tokens=Count(
-                "id", filter=Q(expires_at__lt=timezone.now(), is_active=True)
-            ),
+            expired_tokens=Count("id", filter=Q(expires_at__lt=timezone.now(), is_active=True)),
         )
 
         statistics = {

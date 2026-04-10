@@ -110,9 +110,7 @@ class AssetfinderWrapper(BaseWrapper):
 
         return bool(domain_pattern.match(domain))
 
-    def execute_with_validation(
-        self, input_data: Dict[str, Any], **kwargs
-    ) -> Dict[str, Any]:
+    def execute_with_validation(self, input_data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Execute with additional domain validation"""
 
         input_value = input_data.get("value", "")
@@ -158,9 +156,7 @@ class AssetfinderWrapper(BaseWrapper):
             "unique_tlds": len(unique_tlds),
             "tlds": list(unique_tlds),
             "subdomain_levels": subdomain_levels,
-            "max_subdomain_level": max(subdomain_levels.keys())
-            if subdomain_levels
-            else 0,
+            "max_subdomain_level": max(subdomain_levels.keys()) if subdomain_levels else 0,
         }
 
     def filter_results(

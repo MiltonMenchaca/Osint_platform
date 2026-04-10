@@ -85,4 +85,3 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(add_core_cli_transforms, remove_core_cli_transforms),
     ]
-

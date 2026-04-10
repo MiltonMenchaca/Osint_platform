@@ -50,18 +50,20 @@ class DnsTwistWrapper(BaseWrapper):
                     for item in data:
                         domain = item.get("domain")
                         if domain and domain != input_value:
-                            domains.append({
-                                "type": "domain",
-                                "value": domain,
-                                "source": "dnstwist",
-                                "confidence": 0.6,
-                                "properties": {
-                                    "fuzzer": item.get("fuzzer"),
-                                    "dns_a": item.get("dns_a"),
-                                    "dns_mx": item.get("dns_mx"),
-                                    "dns_ns": item.get("dns_ns"),
+                            domains.append(
+                                {
+                                    "type": "domain",
+                                    "value": domain,
+                                    "source": "dnstwist",
+                                    "confidence": 0.6,
+                                    "properties": {
+                                        "fuzzer": item.get("fuzzer"),
+                                        "dns_a": item.get("dns_a"),
+                                        "dns_mx": item.get("dns_mx"),
+                                        "dns_ns": item.get("dns_ns"),
+                                    },
                                 }
-                            })
+                            )
                 else:
                     logger.warning(f"Could not find valid JSON end in dnstwist output: {raw_output[:100]}...")
             else:
@@ -146,8 +148,7 @@ class HttpxWrapper(BaseWrapper):
                     timeout=2,
                     check=False,
                 )
-                return "projectdiscovery" in (proc.stderr or "").lower() or \
-                       "httpx" in (proc.stderr or "").lower()
+                return "projectdiscovery" in (proc.stderr or "").lower() or "httpx" in (proc.stderr or "").lower()
             except Exception:
                 return False
 
@@ -170,7 +171,8 @@ class HttpxWrapper(BaseWrapper):
 
         command = [
             self.tool_path,
-            "-u", input_value,
+            "-u",
+            input_value,
             "-json",
             "-silent",
             "-tech-detect",
@@ -198,13 +200,9 @@ class HttpxWrapper(BaseWrapper):
                         "host": data.get("host"),
                         "port": data.get("port"),
                     }
-                    results.append({
-                        "type": "url",
-                        "value": url,
-                        "source": "httpx",
-                        "confidence": 1.0,
-                        "properties": props
-                    })
+                    results.append(
+                        {"type": "url", "value": url, "source": "httpx", "confidence": 1.0, "properties": props}
+                    )
             except json.JSONDecodeError:
                 pass
 
@@ -248,8 +246,7 @@ class WaybackUrlsWrapper(BaseWrapper):
 
         unique_urls = sorted(set(urls))
         results: List[Dict[str, Any]] = [
-            {"type": "url", "value": url, "source": "waybackurls", "confidence": 0.7}
-            for url in unique_urls
+            {"type": "url", "value": url, "source": "waybackurls", "confidence": 0.7} for url in unique_urls
         ]
 
         execution_info = {
@@ -280,9 +277,7 @@ class GobusterWrapper(BaseWrapper):
 
         timeout = int(kwargs.get("timeout", 300))
         mode = str(kwargs.get("mode", "dir"))
-        wordlist = str(
-            kwargs.get("wordlist") or "/usr/share/wordlists/dirb/common.txt"
-        )
+        wordlist = str(kwargs.get("wordlist") or "/usr/share/wordlists/dirb/common.txt")
         threads = int(kwargs.get("threads", 30))
         extensions = kwargs.get("extensions")
 
@@ -385,16 +380,15 @@ class CrtShWrapper(BaseWrapper):
                             domain = domain.strip()
                             if domain and domain != input_value and domain not in seen:
                                 seen.add(domain)
-                                domains.append({
-                                    "type": "domain",
-                                    "value": domain,
-                                    "source": "crtsh",
-                                    "confidence": 0.9,
-                                    "properties": {
-                                        "id": entry.get("id"),
-                                        "issuer_name": entry.get("issuer_name")
+                                domains.append(
+                                    {
+                                        "type": "domain",
+                                        "value": domain,
+                                        "source": "crtsh",
+                                        "confidence": 0.9,
+                                        "properties": {"id": entry.get("id"), "issuer_name": entry.get("issuer_name")},
                                     }
-                                })
+                                )
         except Exception as e:
             logger.error(f"crt.sh request failed: {e}")
 
@@ -435,6 +429,7 @@ class DirbWrapper(BaseWrapper):
     def is_tool_available(self) -> bool:
         import os
         from shutil import which
+
         # Default path in our docker container
         if os.path.exists("/usr/local/bin/dirb"):
             return True
@@ -497,15 +492,15 @@ class DirbWrapper(BaseWrapper):
                                 except Exception:
                                     pass
 
-                            discovered_urls.append({
-                                "type": "url",
-                                "value": url,
-                                "source": "dirb",
-                                "confidence": 1.0,
-                                "properties": {
-                                    "status_code": code
+                            discovered_urls.append(
+                                {
+                                    "type": "url",
+                                    "value": url,
+                                    "source": "dirb",
+                                    "confidence": 1.0,
+                                    "properties": {"status_code": code},
                                 }
-                            })
+                            )
 
             # Also parse stdout if file failed for some reason
             if not discovered_urls and result.get("stdout"):
@@ -515,13 +510,9 @@ class DirbWrapper(BaseWrapper):
                         parts = line.split()
                         if len(parts) >= 2:
                             url = parts[1]
-                            discovered_urls.append({
-                                "type": "url",
-                                "value": url,
-                                "source": "dirb",
-                                "confidence": 1.0,
-                                "properties": {}
-                            })
+                            discovered_urls.append(
+                                {"type": "url", "value": url, "source": "dirb", "confidence": 1.0, "properties": {}}
+                            )
 
         finally:
             self._cleanup_temp_dir()
@@ -542,6 +533,7 @@ class NiktoWrapper(BaseWrapper):
     def is_tool_available(self) -> bool:
         import os
         from shutil import which
+
         if os.path.exists("/usr/local/bin/nikto"):
             return True
         return which("nikto") is not None
@@ -586,18 +578,20 @@ class NiktoWrapper(BaseWrapper):
                     # Assuming standard structure
                     vulnerabilities = data.get("vulnerabilities", [])
                     for vuln in vulnerabilities:
-                        findings.append({
-                            "type": "other",  # vulnerability
-                            "value": vuln.get("msg", "Unknown vulnerability"),
-                            "source": "nikto",
-                            "confidence": 0.9,
-                            "properties": {
-                                "id": vuln.get("id"),
-                                "method": vuln.get("method"),
-                                "url": vuln.get("url"),
-                                "osvdb": vuln.get("osvdb")
+                        findings.append(
+                            {
+                                "type": "other",  # vulnerability
+                                "value": vuln.get("msg", "Unknown vulnerability"),
+                                "source": "nikto",
+                                "confidence": 0.9,
+                                "properties": {
+                                    "id": vuln.get("id"),
+                                    "method": vuln.get("method"),
+                                    "url": vuln.get("url"),
+                                    "osvdb": vuln.get("osvdb"),
+                                },
                             }
-                        })
+                        )
 
                     if not vulnerabilities and "nikto_scan_details" in data:
                         # Sometimes it's wrapped
@@ -625,6 +619,7 @@ class WhatwebWrapper(BaseWrapper):
     def is_tool_available(self) -> bool:
         import os
         from shutil import which
+
         if os.path.exists("/usr/local/bin/whatweb"):
             return True
         return which("whatweb") is not None
@@ -670,17 +665,19 @@ class WhatwebWrapper(BaseWrapper):
                     if "version" in plugin_data and plugin_data["version"]:
                         version = plugin_data["version"][0]
 
-                    technologies.append({
-                        "type": "technology",
-                        "value": plugin_name,
-                        "source": "whatweb",
-                        "confidence": 1.0,
-                        "properties": {
-                            "version": version,
-                            "modules": plugin_data.get("module", []),
-                            "string": plugin_data.get("string", [])
+                    technologies.append(
+                        {
+                            "type": "technology",
+                            "value": plugin_name,
+                            "source": "whatweb",
+                            "confidence": 1.0,
+                            "properties": {
+                                "version": version,
+                                "modules": plugin_data.get("module", []),
+                                "string": plugin_data.get("string", []),
+                            },
                         }
-                    })
+                    )
 
         except Exception as e:
             logger.error(f"Failed to parse whatweb output: {e}. Raw output: {result.get('stdout')[:200]}")
@@ -741,34 +738,35 @@ class WappalyzerWrapper(BaseWrapper):
             # analyze_with_versions_and_categories() is available in newer versions
 
             # Try to get detailed info if available
-            if hasattr(wappalyzer, 'analyze_with_versions_and_categories'):
+            if hasattr(wappalyzer, "analyze_with_versions_and_categories"):
                 results = wappalyzer.analyze_with_versions_and_categories(webpage)
                 # Format: {'Tech Name': {'versions': ['1.0'], 'categories': ['CMS']}}
                 for tech_name, tech_data in results.items():
-                    versions = tech_data.get('versions', [])
-                    categories = tech_data.get('categories', [])
+                    versions = tech_data.get("versions", [])
+                    categories = tech_data.get("categories", [])
 
-                    technologies_found.append({
-                        "type": "technology",
-                        "value": tech_name,
-                        "source": "wappalyzer",
-                        "confidence": 1.0,
-                        "properties": {
-                            "versions": versions,
-                            "categories": categories
+                    technologies_found.append(
+                        {
+                            "type": "technology",
+                            "value": tech_name,
+                            "source": "wappalyzer",
+                            "confidence": 1.0,
+                            "properties": {"versions": versions, "categories": categories},
                         }
-                    })
+                    )
             else:
                 # Fallback to simple analyze
                 results = wappalyzer.analyze(webpage)
                 for tech_name in results:
-                    technologies_found.append({
-                        "type": "technology",
-                        "value": tech_name,
-                        "source": "wappalyzer",
-                        "confidence": 1.0,
-                        "properties": {}
-                    })
+                    technologies_found.append(
+                        {
+                            "type": "technology",
+                            "value": tech_name,
+                            "source": "wappalyzer",
+                            "confidence": 1.0,
+                            "properties": {},
+                        }
+                    )
 
         except ImportError:
             error = "python-Wappalyzer not installed"
@@ -787,7 +785,7 @@ class WappalyzerWrapper(BaseWrapper):
             "start_time": start_time,
             "end_time": end_time,
             "command": "python-Wappalyzer library",
-            "error": error
+            "error": error,
         }
 
         return self._format_output(technologies_found, execution_info)
@@ -826,22 +824,11 @@ class UrlScanWrapper(BaseWrapper):
         error = None
 
         try:
-            headers = {
-                'API-Key': api_key,
-                'Content-Type': 'application/json'
-            }
-            data = {
-                "url": target,
-                "visibility": "public"
-            }
+            headers = {"API-Key": api_key, "Content-Type": "application/json"}
+            data = {"url": target, "visibility": "public"}
 
             # 1. Submit Scan
-            submit_resp = requests.post(
-                'https://urlscan.io/api/v1/scan/',
-                headers=headers,
-                json=data,
-                timeout=30
-            )
+            submit_resp = requests.post("https://urlscan.io/api/v1/scan/", headers=headers, json=data, timeout=30)
 
             if submit_resp.status_code != 200:
                 raise Exception(f"Submission failed: {submit_resp.text}")
@@ -868,30 +855,31 @@ class UrlScanWrapper(BaseWrapper):
                     page = scan_data.get("page", {})
                     task = scan_data.get("task", {})
                     # Add Result URL
-                    results.append({
-                        "type": "url",
-                        "value": result_url,
-                        "source": "urlscan",
-                        "confidence": 1.0,
-                        "properties": {
-                            "type": "report",
-                            "screenshot": task.get("screenshotURL")
+                    results.append(
+                        {
+                            "type": "url",
+                            "value": result_url,
+                            "source": "urlscan",
+                            "confidence": 1.0,
+                            "properties": {"type": "report", "screenshot": task.get("screenshotURL")},
                         }
-                    })
+                    )
 
                     # Add IP
                     if page.get("ip"):
-                        results.append({
-                            "type": "ip",
-                            "value": page.get("ip"),
-                            "source": "urlscan",
-                            "confidence": 1.0,
-                            "properties": {
-                                "asn": page.get("asn"),
-                                "asnname": page.get("asnname"),
-                                "country": page.get("country")
+                        results.append(
+                            {
+                                "type": "ip",
+                                "value": page.get("ip"),
+                                "source": "urlscan",
+                                "confidence": 1.0,
+                                "properties": {
+                                    "asn": page.get("asn"),
+                                    "asnname": page.get("asnname"),
+                                    "country": page.get("country"),
+                                },
                             }
-                        })
+                        )
 
                     # Add Screenshot URL as a special entity or property?
                     # We already added it to the report URL properties.
@@ -920,7 +908,7 @@ class UrlScanWrapper(BaseWrapper):
             "start_time": start_time,
             "end_time": end_time,
             "command": "urlscan API",
-            "error": error
+            "error": error,
         }
 
         return self._format_output(results, execution_info)
@@ -1005,6 +993,7 @@ class ReconNgWrapper(BaseWrapper):
     def is_tool_available(self) -> bool:
         import os
         from shutil import which
+
         if os.path.exists("/tools/recon-ng/recon-ng"):
             return True
         return which("recon-ng") is not None
@@ -1050,7 +1039,7 @@ class ReconNgWrapper(BaseWrapper):
             f"options set FILENAME {output_file}",
             "run",
             "workspaces remove",  # Removes current workspace
-            "exit"
+            "exit",
         ]
 
         with open(rc_file, "w") as f:
@@ -1082,32 +1071,38 @@ class ReconNgWrapper(BaseWrapper):
                                     host = row.get("host")
                                     ip = row.get("ip_address")
                                     if host:
-                                        entities.append({
-                                            "type": "domain",
-                                            "value": host,
-                                            "source": "recon-ng",
-                                            "confidence": 0.9,
-                                            "properties": row
-                                        })
+                                        entities.append(
+                                            {
+                                                "type": "domain",
+                                                "value": host,
+                                                "source": "recon-ng",
+                                                "confidence": 0.9,
+                                                "properties": row,
+                                            }
+                                        )
                                     if ip:
-                                        entities.append({
-                                            "type": "ip",
-                                            "value": ip,
-                                            "source": "recon-ng",
-                                            "confidence": 0.9,
-                                            "properties": row
-                                        })
+                                        entities.append(
+                                            {
+                                                "type": "ip",
+                                                "value": ip,
+                                                "source": "recon-ng",
+                                                "confidence": 0.9,
+                                                "properties": row,
+                                            }
+                                        )
                             elif table == "domains":
                                 for row in rows:
                                     domain = row.get("domain")
                                     if domain and domain != target:
-                                        entities.append({
-                                            "type": "domain",
-                                            "value": domain,
-                                            "source": "recon-ng",
-                                            "confidence": 0.9,
-                                            "properties": row
-                                        })
+                                        entities.append(
+                                            {
+                                                "type": "domain",
+                                                "value": domain,
+                                                "source": "recon-ng",
+                                                "confidence": 0.9,
+                                                "properties": row,
+                                            }
+                                        )
                 except Exception as e:
                     logger.warning("Failed to parse recon-ng output: %s", e)
         finally:
@@ -1122,6 +1117,7 @@ class SpiderFootWrapper(BaseWrapper):
 
     def is_tool_available(self) -> bool:
         from shutil import which
+
         return which("sf.py") is not None
 
     def get_supported_input_types(self) -> List[str]:
@@ -1137,6 +1133,7 @@ class SpiderFootWrapper(BaseWrapper):
         # Resolve sf.py path
         from shutil import which
         import os
+
         sf_path = which("sf.py")
         if not sf_path:
             # Try common locations
@@ -1177,11 +1174,11 @@ class SpiderFootWrapper(BaseWrapper):
             data = json.loads(raw_output)
         except json.JSONDecodeError:
             # Try NDJSON (Newlines Delimited JSON)
-            lines = raw_output.strip().split('\n')
+            lines = raw_output.strip().split("\n")
             for line in lines:
                 line = line.strip()
                 # Remove trailing comma if present (sometimes tools output [ {...}, {...} ] but split by lines)
-                if line.endswith(','):
+                if line.endswith(","):
                     line = line[:-1]
 
                 if not line:
@@ -1242,13 +1239,15 @@ class SpiderFootWrapper(BaseWrapper):
                         entity_type = "email"
 
                     if evt_data != target:  # Exclude self if needed, but SF often returns self as first event
-                        entities.append({
-                            "type": entity_type,
-                            "value": evt_data,
-                            "source": "spiderfoot",
-                            "confidence": 1.0,  # SF doesn't provide confidence easily in CLI
-                            "properties": {"sf_type": evt_type}
-                        })
+                        entities.append(
+                            {
+                                "type": entity_type,
+                                "value": evt_data,
+                                "source": "spiderfoot",
+                                "confidence": 1.0,  # SF doesn't provide confidence easily in CLI
+                                "properties": {"sf_type": evt_type},
+                            }
+                        )
 
         return self._format_output(entities, {"raw_count": len(entities)})
 

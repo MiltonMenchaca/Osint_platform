@@ -111,18 +111,14 @@ class InvestigationDetailSerializer(serializers.ModelSerializer):
 
     def get_executions(self, obj):
         """Get recent executions for the investigation"""
-        executions = obj.transform_executions.select_related("input_entity").order_by(
-            "-created_at"
-        )[:10]
+        executions = obj.transform_executions.select_related("input_entity").order_by("-created_at")[:10]
         return TransformExecutionListSerializer(executions, many=True).data
 
     def validate_status(self, value):
         """Validate investigation status"""
         valid_statuses = ["active", "completed", "paused", "archived"]
         if value not in valid_statuses:
-            raise serializers.ValidationError(
-                f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
-            )
+            raise serializers.ValidationError(f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
         return value
 
     def validate_metadata(self, value):
@@ -215,16 +211,12 @@ class InvestigationCreateSerializer(serializers.ModelSerializer):
     def validate_name(self, value):
         """Validate investigation name"""
         if len(value.strip()) < 3:
-            raise serializers.ValidationError(
-                "Investigation name must be at least 3 characters long"
-            )
+            raise serializers.ValidationError("Investigation name must be at least 3 characters long")
 
         # Check for duplicate names for the same user
         user = self.context["request"].user
         if Investigation.objects.filter(name=value, created_by=user).exists():
-            raise serializers.ValidationError(
-                "You already have an investigation with this name"
-            )
+            raise serializers.ValidationError("You already have an investigation with this name")
 
         return value.strip()
 
@@ -367,34 +359,26 @@ class TransformExecutionCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Invalid request context")
 
         investigation_id = view.kwargs.get("investigation_id")
-        investigation = Investigation.objects.filter(
-            id=investigation_id, created_by=request.user
-        ).first()
+        investigation = Investigation.objects.filter(id=investigation_id, created_by=request.user).first()
         if not investigation:
             raise serializers.ValidationError("Investigation not found")
 
         if investigation.status == "archived":
-            raise serializers.ValidationError(
-                "Cannot execute transforms on archived investigations"
-            )
+            raise serializers.ValidationError("Cannot execute transforms on archived investigations")
 
         input_entity = None
         input_entity_id = attrs.pop("input_entity_id", None)
         input_payload = attrs.pop("input", None)
 
         if input_entity_id:
-            input_entity = Entity.objects.filter(
-                id=input_entity_id, investigation=investigation
-            ).first()
+            input_entity = Entity.objects.filter(id=input_entity_id, investigation=investigation).first()
             if not input_entity:
                 raise serializers.ValidationError("Input entity not found")
         elif input_payload:
             entity_type = input_payload.get("entity_type")
             value = input_payload.get("value")
             if not entity_type or not value:
-                raise serializers.ValidationError(
-                    "input must include entity_type and value"
-                )
+                raise serializers.ValidationError("input must include entity_type and value")
             input_entity, _ = Entity.objects.get_or_create(
                 investigation=investigation,
                 entity_type=entity_type,
@@ -444,9 +428,7 @@ class BulkExecutionSerializer(serializers.Serializer):
     """Serializer for bulk transform execution"""
 
     investigation_id = serializers.IntegerField()
-    transform_ids = serializers.ListField(
-        child=serializers.IntegerField(), min_length=1, max_length=10
-    )
+    transform_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1, max_length=10)
     input_data = serializers.JSONField()
 
     def validate_investigation_id(self, value):
@@ -455,22 +437,16 @@ class BulkExecutionSerializer(serializers.Serializer):
         try:
             investigation = Investigation.objects.get(id=value, created_by=user)
             if investigation.status == "archived":
-                raise serializers.ValidationError(
-                    "Cannot execute transforms on archived investigations"
-                )
+                raise serializers.ValidationError("Cannot execute transforms on archived investigations")
             return value
         except Investigation.DoesNotExist:
-            raise serializers.ValidationError(
-                "Investigation not found or you don't have access"
-            )
+            raise serializers.ValidationError("Investigation not found or you don't have access")
 
     def validate_transform_ids(self, value):
         """Validate all transforms exist and are enabled"""
         transforms = Transform.objects.filter(id__in=value, is_enabled=True)
         if len(transforms) != len(value):
-            raise serializers.ValidationError(
-                "One or more transforms not found or not enabled"
-            )
+            raise serializers.ValidationError("One or more transforms not found or not enabled")
         return value
 
     def validate_input_data(self, value):
@@ -490,20 +466,14 @@ class ExecutionControlSerializer(serializers.Serializer):
     """Serializer for execution control actions"""
 
     action = serializers.ChoiceField(choices=["cancel", "retry", "pause", "resume"])
-    execution_ids = serializers.ListField(
-        child=serializers.IntegerField(), min_length=1, max_length=50
-    )
+    execution_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1, max_length=50)
 
     def validate_execution_ids(self, value):
         """Validate executions exist and user has access"""
         user = self.context["request"].user
-        executions = TransformExecution.objects.filter(
-            id__in=value, investigation__created_by=user
-        )
+        executions = TransformExecution.objects.filter(id__in=value, investigation__created_by=user)
 
         if len(executions) != len(value):
-            raise serializers.ValidationError(
-                "One or more executions not found or you don't have access"
-            )
+            raise serializers.ValidationError("One or more executions not found or you don't have access")
 
         return value

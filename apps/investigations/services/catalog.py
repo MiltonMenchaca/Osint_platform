@@ -28,14 +28,14 @@ class OsintCatalogService:
             {
                 "category": "Directorios y listados",
                 "name": "Directorios listados",
-                "query": "site:{target} intitle:\"index of\"",
+                "query": 'site:{target} intitle:"index of"',
                 "intent": "Encontrar listados de directorios públicos.",
                 "risk": "Exposición de archivos internos.",
             },
             {
                 "category": "Directorios y listados",
                 "name": "Listados con extensiones sensibles",
-                "query": "site:{target} intitle:\"index of\" (sql OR env OR bak OR zip OR tar OR gz OR 7z)",
+                "query": 'site:{target} intitle:"index of" (sql OR env OR bak OR zip OR tar OR gz OR 7z)',
                 "intent": "Priorizar listados con archivos potencialmente sensibles.",
                 "risk": "Filtración de backups o configuraciones.",
             },
@@ -66,17 +66,14 @@ class OsintCatalogService:
             {
                 "category": "Configuración y secretos",
                 "name": "Variables de entorno",
-                "query": "site:{target} (\".env\" OR \"dotenv\")",
+                "query": 'site:{target} (".env" OR "dotenv")',
                 "intent": "Detectar archivos .env expuestos.",
                 "risk": "Exposición de claves.",
             },
             {
                 "category": "Configuración y secretos",
                 "name": "Credenciales en texto",
-                "query": (
-                    "site:{target} (password OR passwd OR token OR secret"
-                    " OR api_key OR \"access key\")"
-                ),
+                "query": ("site:{target} (password OR passwd OR token OR secret" ' OR api_key OR "access key")'),
                 "intent": "Identificar páginas con credenciales visibles.",
                 "risk": "Acceso no autorizado.",
             },
@@ -84,7 +81,7 @@ class OsintCatalogService:
                 "category": "Documentos sensibles",
                 "name": "Documentos internos",
                 "query": (
-                    "site:{target} (confidencial OR interno OR \"uso interno\")"
+                    'site:{target} (confidencial OR interno OR "uso interno")'
                     " (pdf OR doc OR docx OR xls OR xlsx OR ppt OR pptx)"
                 ),
                 "intent": "Detectar documentos internos expuestos.",
@@ -94,7 +91,7 @@ class OsintCatalogService:
                 "category": "Documentos sensibles",
                 "name": "Documentación técnica",
                 "query": (
-                    "site:{target} (manual OR arquitectura OR \"guía\" OR \"política\")"
+                    'site:{target} (manual OR arquitectura OR "guía" OR "política")'
                     " (pdf OR doc OR docx OR ppt OR pptx)"
                 ),
                 "intent": "Localizar documentación técnica.",
@@ -103,8 +100,9 @@ class OsintCatalogService:
             {
                 "category": "Documentos sensibles",
                 "name": "Documentos ofimáticos",
-                "query": ("site:{target} (filetype:pdf OR filetype:doc OR filetype:docx"
-                          " OR filetype:rtf OR filetype:odt)"),
+                "query": (
+                    "site:{target} (filetype:pdf OR filetype:doc OR filetype:docx" " OR filetype:rtf OR filetype:odt)"
+                ),
                 "intent": "Encontrar documentos de texto expuestos.",
                 "risk": "Divulgación de contenido interno.",
             },
@@ -140,8 +138,7 @@ class OsintCatalogService:
                 "category": "Documentos sensibles",
                 "name": "Plantillas y formularios",
                 "query": (
-                    "site:{target} (filetype:docm OR filetype:xlt OR filetype:xltx"
-                    " OR filetype:dot OR filetype:dotx)"
+                    "site:{target} (filetype:docm OR filetype:xlt OR filetype:xltx" " OR filetype:dot OR filetype:dotx)"
                 ),
                 "intent": "Identificar plantillas usadas internamente.",
                 "risk": "Divulgación de formatos internos.",
@@ -156,14 +153,14 @@ class OsintCatalogService:
             {
                 "category": "APIs y servicios",
                 "name": "Documentación Swagger",
-                "query": "site:{target} (swagger OR \"swagger-ui\" OR \"swagger.json\" OR \"openapi.json\")",
+                "query": 'site:{target} (swagger OR "swagger-ui" OR "swagger.json" OR "openapi.json")',
                 "intent": "Encontrar documentación de API.",
                 "risk": "Exposición de rutas y esquemas.",
             },
             {
                 "category": "Errores y debug",
                 "name": "Errores y trazas",
-                "query": "site:{target} (stacktrace OR exception OR \"traceback\" OR \"fatal error\")",
+                "query": 'site:{target} (stacktrace OR exception OR "traceback" OR "fatal error")',
                 "intent": "Descubrir errores con información sensible.",
                 "risk": "Filtración de rutas y credenciales.",
             },
@@ -184,7 +181,7 @@ class OsintCatalogService:
             {
                 "category": "Repositorios y código",
                 "name": "Repositorios expuestos",
-                "query": "site:{target} (\".git\" OR \"git/config\")",
+                "query": 'site:{target} (".git" OR "git/config")',
                 "intent": "Detectar repositorios expuestos.",
                 "risk": "Exposición completa del código.",
             },
@@ -226,7 +223,7 @@ class OsintCatalogService:
             {
                 "category": "Pagos y finanzas",
                 "name": "Pasarelas y pagos",
-                "query": "site:{target} (payment OR checkout OR pasarela OR \"tarjeta\")",
+                "query": 'site:{target} (payment OR checkout OR pasarela OR "tarjeta")',
                 "intent": "Detectar flujos de pago expuestos.",
                 "risk": "Ataques a rutas críticas.",
             },
@@ -254,14 +251,14 @@ class OsintCatalogService:
             {
                 "category": "Acuerdos y legales",
                 "name": "Políticas internas",
-                "query": "site:{target} (\"política\" OR \"normativa\" OR \"acuerdo\") (pdf OR doc)",
+                "query": 'site:{target} ("política" OR "normativa" OR "acuerdo") (pdf OR doc)',
                 "intent": "Encontrar documentos legales internos.",
                 "risk": "Divulgación de controles internos.",
             },
             {
                 "category": "Contacto y soporte",
                 "name": "Correos y formularios",
-                "query": "site:{target} (\"@\" OR correo OR email OR soporte OR contacto)",
+                "query": 'site:{target} ("@" OR correo OR email OR soporte OR contacto)',
                 "intent": "Recolectar puntos de contacto.",
                 "risk": "Ataques de phishing dirigidos.",
             },
@@ -369,9 +366,7 @@ class OsintCatalogService:
         }
 
     def build_catalog(self, target: Optional[str] = None) -> Dict[str, Any]:
-        transforms = Transform.objects.filter(is_enabled=True).order_by(
-            "category", "display_name"
-        )
+        transforms = Transform.objects.filter(is_enabled=True).order_by("category", "display_name")
         tools = [
             {
                 "name": t.name,

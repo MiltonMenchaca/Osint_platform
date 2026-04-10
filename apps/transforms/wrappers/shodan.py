@@ -129,15 +129,11 @@ class ShodanWrapper(BaseWrapper):
                             "transport": transport,
                             "product": service.get("product"),
                             "version": service.get("version"),
-                            "banner": service.get("data", "").strip()[
-                                :500
-                            ],  # Limit banner size
+                            "banner": service.get("data", "").strip()[:500],  # Limit banner size
                             "timestamp": service.get("timestamp"),
                             "ssl": service.get("ssl", {}),
                             "location": {
-                                "country": service.get("location", {}).get(
-                                    "country_name"
-                                ),
+                                "country": service.get("location", {}).get("country_name"),
                                 "city": service.get("location", {}).get("city"),
                             },
                         },
@@ -155,9 +151,7 @@ class ShodanWrapper(BaseWrapper):
                         "properties": {
                             "ip": ip,
                             "cve": vuln,
-                            "verified": host_data.get("vulns", {})
-                            .get(vuln, {})
-                            .get("verified", False),
+                            "verified": host_data.get("vulns", {}).get(vuln, {}).get("verified", False),
                         },
                     }
                 )

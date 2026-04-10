@@ -60,9 +60,7 @@ class SecurityFilter(logging.Filter):
         for pattern in self.SENSITIVE_PATTERNS:
             if pattern in message:
                 # Replace sensitive data with placeholder
-                record.msg = record.msg.replace(
-                    record.args[0] if record.args else "", "[REDACTED]"
-                )
+                record.msg = record.msg.replace(record.args[0] if record.args else "", "[REDACTED]")
                 break
 
         return True
@@ -273,9 +271,7 @@ class OSINTLoggerAdapter(logging.LoggerAdapter):
         kwargs["extra"].update(self.extra)
         return msg, kwargs
 
-    def log_transform_start(
-        self, transform_name: str, input_data: dict, user_id: int = None
-    ):
+    def log_transform_start(self, transform_name: str, input_data: dict, user_id: int = None):
         """Log transform execution start"""
         extra = {
             "transform_name": transform_name,
@@ -305,9 +301,7 @@ class OSINTLoggerAdapter(logging.LoggerAdapter):
             extra=extra,
         )
 
-    def log_transform_error(
-        self, transform_name: str, error: Exception, user_id: int = None
-    ):
+    def log_transform_error(self, transform_name: str, error: Exception, user_id: int = None):
         """Log transform execution error"""
         extra = {
             "transform_name": transform_name,
@@ -347,9 +341,7 @@ class OSINTLoggerAdapter(logging.LoggerAdapter):
 
         self.warning(message, extra=extra)
 
-    def log_performance_metric(
-        self, metric_name: str, value: float, unit: str = "", context: dict = None
-    ):
+    def log_performance_metric(self, metric_name: str, value: float, unit: str = "", context: dict = None):
         """Log performance metrics"""
         extra = {
             "metric_name": metric_name,
@@ -363,9 +355,7 @@ class OSINTLoggerAdapter(logging.LoggerAdapter):
 
         # Use performance logger
         perf_logger = logging.getLogger("performance")
-        perf_logger.info(
-            f"Performance metric: {metric_name} = {value} {unit}", extra=extra
-        )
+        perf_logger.info(f"Performance metric: {metric_name} = {value} {unit}", extra=extra)
 
 
 def get_logger(name: str, **context) -> OSINTLoggerAdapter:
@@ -380,9 +370,7 @@ def log_api_request(logger, request, response_time: float = None):
     extra = {
         "method": request.method,
         "path": request.path,
-        "user_id": getattr(request.user, "id", None)
-        if hasattr(request, "user")
-        else None,
+        "user_id": getattr(request.user, "id", None) if hasattr(request, "user") else None,
         "ip_address": get_client_ip(request),
         "event_type": "api_request",
     }
@@ -397,9 +385,7 @@ def log_api_request(logger, request, response_time: float = None):
     logger.info(message, extra=extra)
 
 
-def log_database_query(
-    logger, query: str, execution_time: float, result_count: int = None
-):
+def log_database_query(logger, query: str, execution_time: float, result_count: int = None):
     """Log database query performance"""
     extra = {
         "query_type": query.split()[0].upper() if query else "UNKNOWN",

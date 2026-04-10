@@ -110,15 +110,11 @@ class TransformCreateSerializer(serializers.ModelSerializer):
     def validate_name(self, value):
         """Validate transform name"""
         if len(value.strip()) < 3:
-            raise serializers.ValidationError(
-                "Transform name must be at least 3 characters long"
-            )
+            raise serializers.ValidationError("Transform name must be at least 3 characters long")
 
         # Check for duplicate names
         if Transform.objects.filter(name=value).exists():
-            raise serializers.ValidationError(
-                "A transform with this name already exists"
-            )
+            raise serializers.ValidationError("A transform with this name already exists")
 
         return value.strip()
 
@@ -171,9 +167,7 @@ class TransformCreateSerializer(serializers.ModelSerializer):
 
         for pattern in dangerous_patterns:
             if re.search(pattern, value, re.IGNORECASE):
-                raise serializers.ValidationError(
-                    "Command template contains potentially dangerous operations"
-                )
+                raise serializers.ValidationError("Command template contains potentially dangerous operations")
 
         return value.strip()
 
@@ -230,17 +224,13 @@ class TransformUpdateSerializer(serializers.ModelSerializer):
     def validate_name(self, value):
         """Validate transform name for updates"""
         if len(value.strip()) < 3:
-            raise serializers.ValidationError(
-                "Transform name must be at least 3 characters long"
-            )
+            raise serializers.ValidationError("Transform name must be at least 3 characters long")
 
         # Check for duplicate names (excluding current instance)
         instance = getattr(self, "instance", None)
         if instance:
             if Transform.objects.filter(name=value).exclude(id=instance.id).exists():
-                raise serializers.ValidationError(
-                    "A transform with this name already exists"
-                )
+                raise serializers.ValidationError("A transform with this name already exists")
 
         return value.strip()
 
@@ -300,9 +290,7 @@ class TransformTestSerializer(serializers.Serializer):
             for key in ("target", "input", "input_value", "value"):
                 if key in value and isinstance(value[key], str) and value[key].strip():
                     return value
-            raise serializers.ValidationError(
-                "Test input must contain one of: target, input, input_value, value"
-            )
+            raise serializers.ValidationError("Test input must contain one of: target, input, input_value, value")
 
         raise serializers.ValidationError("Test input must be a string or a JSON object")
 
@@ -310,9 +298,7 @@ class TransformTestSerializer(serializers.Serializer):
 class TransformValidationSerializer(serializers.Serializer):
     """Serializer for transform validation"""
 
-    validation_type = serializers.ChoiceField(
-        choices=["basic", "full"], required=False, default="full"
-    )
+    validation_type = serializers.ChoiceField(choices=["basic", "full"], required=False, default="full")
 
 
 class BulkTransformActionSerializer(serializers.Serializer):
@@ -327,9 +313,7 @@ class BulkTransformActionSerializer(serializers.Serializer):
             "update_command_templates",
         ]
     )
-    transform_ids = serializers.ListField(
-        child=serializers.UUIDField(), min_length=1, max_length=50
-    )
+    transform_ids = serializers.ListField(child=serializers.UUIDField(), min_length=1, max_length=50)
 
     def validate_transform_ids(self, value):
         """Validate transforms exist"""
@@ -342,9 +326,7 @@ class BulkTransformActionSerializer(serializers.Serializer):
 class TransformImportSerializer(serializers.Serializer):
     """Serializer for importing transforms"""
 
-    transforms = serializers.ListField(
-        child=serializers.DictField(), min_length=1, max_length=100
-    )
+    transforms = serializers.ListField(child=serializers.DictField(), min_length=1, max_length=100)
     overwrite_existing = serializers.BooleanField(default=False)
 
     def validate_transforms(self, value):
@@ -363,21 +345,15 @@ class TransformImportSerializer(serializers.Serializer):
         for i, transform_data in enumerate(value):
             for field in required_fields:
                 if field not in transform_data:
-                    raise serializers.ValidationError(
-                        f"Transform {i+1}: Missing required field '{field}'"
-                    )
+                    raise serializers.ValidationError(f"Transform {i+1}: Missing required field '{field}'")
 
             # Validate individual fields using existing validators
             try:
                 # Create a temporary serializer instance for validation
                 temp_serializer = TransformCreateSerializer(data=transform_data)
                 if not temp_serializer.is_valid():
-                    raise serializers.ValidationError(
-                        f"Transform {i+1}: {temp_serializer.errors}"
-                    )
+                    raise serializers.ValidationError(f"Transform {i+1}: {temp_serializer.errors}")
             except Exception as e:
-                raise serializers.ValidationError(
-                    f"Transform {i+1}: Validation error - {str(e)}"
-                )
+                raise serializers.ValidationError(f"Transform {i+1}: Validation error - {str(e)}")
 
         return value

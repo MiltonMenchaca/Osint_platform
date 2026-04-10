@@ -71,7 +71,5 @@ urlpatterns = [
         name="bulk-execute-transforms",
     ),
     # User statistics
-    path(
-        "user/stats/", views.user_investigations_stats, name="user-investigations-stats"
-    ),
+    path("user/stats/", views.user_investigations_stats, name="user-investigations-stats"),
 ]

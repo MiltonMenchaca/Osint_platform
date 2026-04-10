@@ -101,20 +101,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def validate_username(self, value):
         """Validate username"""
         if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError(
-                "A user with this username already exists."
-            )
+            raise serializers.ValidationError("A user with this username already exists.")
 
         # Additional username validation
         if len(value) < 3:
-            raise serializers.ValidationError(
-                "Username must be at least 3 characters long."
-            )
+            raise serializers.ValidationError("Username must be at least 3 characters long.")
 
         if not value.replace("_", "").replace("-", "").isalnum():
-            raise serializers.ValidationError(
-                "Username can only contain letters, numbers, underscores, and hyphens."
-            )
+            raise serializers.ValidationError("Username can only contain letters, numbers, underscores, and hyphens.")
 
         return value
 
@@ -183,9 +177,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             user_profile = getattr(request.user, "userprofile", None)
             if not user_profile or user_profile.role != "admin":
                 if self.instance and self.instance.role != value:
-                    raise serializers.ValidationError(
-                        "You don't have permission to change roles."
-                    )
+                    raise serializers.ValidationError("You don't have permission to change roles.")
         return value
 
     def validate_api_access_enabled(self, value):
@@ -196,9 +188,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             user_profile = getattr(request.user, "userprofile", None)
             if not user_profile or user_profile.role != "admin":
                 if self.instance and self.instance.api_access_enabled != value:
-                    raise serializers.ValidationError(
-                        "You don't have permission to change API access."
-                    )
+                    raise serializers.ValidationError("You don't have permission to change API access.")
         return value
 
 
@@ -307,9 +297,7 @@ class APITokenSerializer(serializers.ModelSerializer):
 class APITokenCreateSerializer(serializers.ModelSerializer):
     """API token creation serializer"""
 
-    expires_in_days = serializers.IntegerField(
-        write_only=True, required=False, default=90
-    )
+    expires_in_days = serializers.IntegerField(write_only=True, required=False, default=90)
 
     class Meta:
         model = APIToken
@@ -320,9 +308,7 @@ class APITokenCreateSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request and request.user:
             if APIToken.objects.filter(user=request.user, name=value).exists():
-                raise serializers.ValidationError(
-                    "You already have a token with this name."
-                )
+                raise serializers.ValidationError("You already have a token with this name.")
         return value
 
     def validate_scopes(self, value):
@@ -341,9 +327,7 @@ class APITokenCreateSerializer(serializers.ModelSerializer):
         if "admin" in value and request and request.user:
             user_profile = getattr(request.user, "userprofile", None)
             if not user_profile or user_profile.role != "admin":
-                raise serializers.ValidationError(
-                    "You don't have permission to create admin tokens."
-                )
+                raise serializers.ValidationError("You don't have permission to create admin tokens.")
 
         return value
 
@@ -353,9 +337,7 @@ class APITokenCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Expiry days must be positive.")
 
         if value > 365:
-            raise serializers.ValidationError(
-                "Token cannot expire more than 365 days from now."
-            )
+            raise serializers.ValidationError("Token cannot expire more than 365 days from now.")
 
         return value
 
@@ -419,9 +401,7 @@ class UserListSerializer(serializers.ModelSerializer):
     """Simple user list serializer"""
 
     role = serializers.CharField(source="userprofile.role", read_only=True)
-    api_access_enabled = serializers.BooleanField(
-        source="userprofile.api_access_enabled", read_only=True
-    )
+    api_access_enabled = serializers.BooleanField(source="userprofile.api_access_enabled", read_only=True)
 
     class Meta:
         model = User
@@ -485,9 +465,7 @@ class UserPreferencesSerializer(serializers.Serializer):
     timezone = serializers.CharField(max_length=50, default="UTC")
     notifications_enabled = serializers.BooleanField(default=True)
     email_notifications = serializers.BooleanField(default=True)
-    auto_refresh_interval = serializers.IntegerField(
-        min_value=5, max_value=300, default=30
-    )
+    auto_refresh_interval = serializers.IntegerField(min_value=5, max_value=300, default=30)
     items_per_page = serializers.IntegerField(min_value=10, max_value=100, default=20)
 
     def validate_timezone(self, value):

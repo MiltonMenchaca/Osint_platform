@@ -43,8 +43,7 @@ class Command(BaseCommand):
             {
                 "name": "Investigación de Fraude Financiero",
                 "description": (
-                    "Análisis detallado de transacciones sospechosas en"
-                    " cuentas corporativas de la empresa XYZ."
+                    "Análisis detallado de transacciones sospechosas en" " cuentas corporativas de la empresa XYZ."
                 ),
                 "status": "active",
                 "tags": ["fraude", "financiero", "corporativo"],
@@ -53,8 +52,7 @@ class Command(BaseCommand):
             {
                 "name": "Análisis de Red Social",
                 "description": (
-                    "Mapeo de conexiones y relaciones en redes sociales"
-                    " para identificar patrones de comportamiento."
+                    "Mapeo de conexiones y relaciones en redes sociales" " para identificar patrones de comportamiento."
                 ),
                 "status": "completed",
                 "tags": ["social_media", "redes_sociales"],
@@ -168,9 +166,7 @@ class Command(BaseCommand):
                         defaults={"description": rel_data["description"]},
                     )
                     if created:
-                        self.stdout.write(
-                            f"Created relationship: {relationship.relationship_type}"
-                        )
+                        self.stdout.write(f"Created relationship: {relationship.relationship_type}")
 
         # Create some basic transforms
         transforms_data = [
@@ -216,6 +212,4 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"Created transform: {transform.name}")
 
-        self.stdout.write(
-            self.style.SUCCESS("Successfully populated database with test data!")
-        )
+        self.stdout.write(self.style.SUCCESS("Successfully populated database with test data!"))

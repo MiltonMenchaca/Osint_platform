@@ -77,9 +77,7 @@ class TransformListCreateView(generics.ListCreateAPIView):
         )
 
         queryset = Transform.objects.all().annotate(
-            usage_count=Coalesce(
-                Subquery(execution_count_subquery, output_field=IntegerField()), 0
-            ),
+            usage_count=Coalesce(Subquery(execution_count_subquery, output_field=IntegerField()), 0),
             last_used=Subquery(last_used_subquery, output_field=DateTimeField()),
         )
 
@@ -111,9 +109,7 @@ class TransformListCreateView(generics.ListCreateAPIView):
             is_available = available.lower() in ["true", "1", "yes"]
             candidate_transforms = list(queryset)
             available_ids = [
-                transform.id
-                for transform in candidate_transforms
-                if transform.check_availability()[0] == is_available
+                transform.id for transform in candidate_transforms if transform.check_availability()[0] == is_available
             ]
             queryset = queryset.filter(id__in=available_ids)
 
@@ -121,9 +117,7 @@ class TransformListCreateView(generics.ListCreateAPIView):
         input_types = self.request.query_params.get("input_types")
         if input_types:
             input_type_list = [t.strip() for t in input_types.split(",")]
-            queryset = queryset.filter(
-                Q(input_type__in=input_type_list) | Q(input_type="any")
-            )
+            queryset = queryset.filter(Q(input_type__in=input_type_list) | Q(input_type="any"))
 
         # Filter by output entity types
         output_types = self.request.query_params.get("output_types")
@@ -204,9 +198,7 @@ class TransformListCreateView(generics.ListCreateAPIView):
         """Log transform creation"""
         transform = serializer.save()
 
-        logger.info(
-            f"Transform '{transform.name}' created by {self.request.user.username}"
-        )
+        logger.info(f"Transform '{transform.name}' created by {self.request.user.username}")
 
         # Clear transforms cache
         cache.delete("transforms_list")
@@ -228,9 +220,7 @@ class TransformDetailView(generics.RetrieveUpdateDestroyAPIView):
         """Log transform updates"""
         transform = serializer.save()
 
-        logger.info(
-            f"Transform '{transform.name}' updated by {self.request.user.username}"
-        )
+        logger.info(f"Transform '{transform.name}' updated by {self.request.user.username}")
 
         # Clear caches
         cache.delete(f"transform_{transform.id}")
@@ -239,9 +229,7 @@ class TransformDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         """Log transform deletion"""
-        logger.info(
-            f"Transform '{instance.name}' deleted by {self.request.user.username}"
-        )
+        logger.info(f"Transform '{instance.name}' deleted by {self.request.user.username}")
 
         # Clear caches
         cache.delete(f"transform_{instance.id}")
@@ -279,18 +267,14 @@ def transform_stats(request):
             "available": available_count,
             "unavailable": max(len(enabled_transforms) - available_count, 0),
             "by_category": dict(
-                transforms.values("category")
-                .annotate(count=Count("id"))
-                .values_list("category", "count")
+                transforms.values("category").annotate(count=Count("id")).values_list("category", "count")
             ),
             "timeout_stats": transforms.aggregate(
                 avg_timeout=Avg("timeout"),
                 max_timeout=Max("timeout"),
                 min_timeout=Min("timeout"),
             ),
-            "recent": transforms.filter(
-                created_at__gte=timezone.now() - timedelta(days=7)
-            ).count(),
+            "recent": transforms.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
         },
         "executions": {
             "total": executions.count(),
@@ -298,14 +282,8 @@ def transform_stats(request):
             "failed": executions.filter(status="failed").count(),
             "running": executions.filter(status="running").count(),
             "pending": executions.filter(status="pending").count(),
-            "by_status": dict(
-                executions.values("status")
-                .annotate(count=Count("id"))
-                .values_list("status", "count")
-            ),
-            "recent": executions.filter(
-                created_at__gte=timezone.now() - timedelta(days=7)
-            ).count(),
+            "by_status": dict(executions.values("status").annotate(count=Count("id")).values_list("status", "count")),
+            "recent": executions.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
             "avg_duration": 0,
         },
         "usage": {
@@ -314,9 +292,7 @@ def transform_stats(request):
         },
     }
 
-    duration_expr = ExpressionWrapper(
-        F("completed_at") - F("started_at"), output_field=DurationField()
-    )
+    duration_expr = ExpressionWrapper(F("completed_at") - F("started_at"), output_field=DurationField())
     avg_duration = (
         executions.filter(
             status="completed",
@@ -326,9 +302,7 @@ def transform_stats(request):
         .aggregate(avg=Avg(duration_expr))
         .get("avg")
     )
-    stats["executions"]["avg_duration"] = (
-        avg_duration.total_seconds() if avg_duration else 0
-    )
+    stats["executions"]["avg_duration"] = avg_duration.total_seconds() if avg_duration else 0
 
     total_exec_subquery = (
         TransformExecution.objects.filter(transform_name=OuterRef("name"))
@@ -337,27 +311,19 @@ def transform_stats(request):
         .values("c")
     )
     success_exec_subquery = (
-        TransformExecution.objects.filter(
-            transform_name=OuterRef("name"), status="completed"
-        )
+        TransformExecution.objects.filter(transform_name=OuterRef("name"), status="completed")
         .values("transform_name")
         .annotate(c=Count("id"))
         .values("c")
     )
 
     transforms_with_usage = transforms.annotate(
-        execution_count=Coalesce(
-            Subquery(total_exec_subquery, output_field=IntegerField()), 0
-        ),
-        successful_executions=Coalesce(
-            Subquery(success_exec_subquery, output_field=IntegerField()), 0
-        ),
+        execution_count=Coalesce(Subquery(total_exec_subquery, output_field=IntegerField()), 0),
+        successful_executions=Coalesce(Subquery(success_exec_subquery, output_field=IntegerField()), 0),
     )
 
     stats["usage"]["most_used_transforms"] = list(
-        transforms_with_usage.order_by("-execution_count")[:10].values(
-            "id", "name", "category", "execution_count"
-        )
+        transforms_with_usage.order_by("-execution_count")[:10].values("id", "name", "category", "execution_count")
     )
 
     success_rates = []
@@ -440,9 +406,7 @@ def test_transform(request, pk):
                 wrapper_cls = get_wrapper(transform.tool_name)
                 wrapper = wrapper_cls()
                 input_type = transform.input_type if transform.input_type != "any" else "domain"
-                wrapper_result = wrapper.execute(
-                    {"type": input_type, "value": target_value}, timeout=transform.timeout
-                )
+                wrapper_result = wrapper.execute({"type": input_type, "value": target_value}, timeout=transform.timeout)
             except (ValueError, ToolNotFoundError) as e:
                 return Response(
                     {
@@ -459,9 +423,7 @@ def test_transform(request, pk):
 
             response_data["test_result"] = wrapper_result
 
-        logger.info(
-            f"Transform '{transform.name}' tested by {request.user.username}. Execute={execute}"
-        )
+        logger.info(f"Transform '{transform.name}' tested by {request.user.username}. Execute={execute}")
 
         return Response(response_data)
 
@@ -503,9 +465,7 @@ def validate_transform(request, pk):
 
         validation_results["checks"]["command_template"] = {
             "status": "pass" if transform.command_template else "fail",
-            "message": "Command template is valid"
-            if transform.command_template
-            else "Command template is missing",
+            "message": "Command template is valid" if transform.command_template else "Command template is missing",
         }
 
         # Check input/output entity types
@@ -514,12 +474,8 @@ def validate_transform(request, pk):
             validation_results["is_valid"] = False
 
         validation_results["checks"]["entity_types"] = {
-            "status": "pass"
-            if transform.input_type
-            else "fail",
-            "message": "Entity types are configured"
-            if transform.input_type
-            else "Entity types are missing",
+            "status": "pass" if transform.input_type else "fail",
+            "message": "Entity types are configured" if transform.input_type else "Entity types are missing",
         }
 
         # Check timeout
@@ -550,9 +506,7 @@ def validate_transform(request, pk):
 
                     available_tools = set(list_available_tools())
                     if transform.tool_name not in available_tools and transform.tool_name not in {"custom"}:
-                        validation_results["warnings"].append(
-                            f"No wrapper registered for tool '{transform.tool_name}'"
-                        )
+                        validation_results["warnings"].append(f"No wrapper registered for tool '{transform.tool_name}'")
                 except Exception:
                     pass
 
@@ -706,9 +660,7 @@ def bulk_transform_actions(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        logger.info(
-            f"Bulk action '{action}' performed on {len(transform_ids)} transforms by {request.user.username}"
-        )
+        logger.info(f"Bulk action '{action}' performed on {len(transform_ids)} transforms by {request.user.username}")
 
         # Clear caches
         cache.delete("transforms_list")
@@ -763,9 +715,7 @@ def import_transforms(request):
                     existing_transform.save()
                     results["updated"] += 1
 
-                    logger.info(
-                        f"Transform '{name}' updated during import by {request.user.username}"
-                    )
+                    logger.info(f"Transform '{name}' updated during import by {request.user.username}")
                 else:
                     results["skipped"] += 1
                     continue
@@ -850,19 +800,13 @@ def export_transforms(request):
 @permission_classes([permissions.IsAuthenticated, HasAPIAccess])
 def transform_categories(request):
     """Get list of available transform categories"""
-    categories = (
-        Transform.objects.values_list("category", flat=True)
-        .distinct()
-        .order_by("category")
-    )
+    categories = Transform.objects.values_list("category", flat=True).distinct().order_by("category")
 
     category_stats = []
     for category in categories:
         if category:  # Skip empty categories
             count = Transform.objects.filter(category=category).count()
-            enabled_count = Transform.objects.filter(
-                category=category, is_enabled=True
-            ).count()
+            enabled_count = Transform.objects.filter(category=category, is_enabled=True).count()
 
             category_stats.append(
                 {
@@ -873,9 +817,7 @@ def transform_categories(request):
                 }
             )
 
-    return Response(
-        {"categories": category_stats, "total_categories": len(category_stats)}
-    )
+    return Response({"categories": category_stats, "total_categories": len(category_stats)})
 
 
 @api_view(["GET"])
@@ -900,25 +842,13 @@ def transform_usage_stats(request, pk):
             "last_24h": last_24h.count(),
             "last_7d": last_7d.count(),
             "last_30d": last_30d.count(),
-            "by_status": dict(
-                executions.values("status")
-                .annotate(count=Count("id"))
-                .values_list("status", "count")
-            ),
-            "success_rate": (
-                executions.filter(status="completed").count()
-                / max(executions.count(), 1)
-            )
-            * 100,
+            "by_status": dict(executions.values("status").annotate(count=Count("id")).values_list("status", "count")),
+            "success_rate": (executions.filter(status="completed").count() / max(executions.count(), 1)) * 100,
             "avg_duration": 0,
-            "last_execution": executions.order_by("-created_at").first().created_at
-            if executions.exists()
-            else None,
+            "last_execution": executions.order_by("-created_at").first().created_at if executions.exists() else None,
         },
         "users": {
-            "unique_users": executions.values("investigation__created_by")
-            .distinct()
-            .count(),
+            "unique_users": executions.values("investigation__created_by").distinct().count(),
             "top_users": list(
                 executions.values("investigation__created_by__username")
                 .annotate(execution_count=Count("id"))
@@ -927,9 +857,7 @@ def transform_usage_stats(request, pk):
         },
     }
 
-    duration_expr = ExpressionWrapper(
-        F("completed_at") - F("started_at"), output_field=DurationField()
-    )
+    duration_expr = ExpressionWrapper(F("completed_at") - F("started_at"), output_field=DurationField())
     avg_duration = (
         executions.filter(
             status="completed",
@@ -954,18 +882,14 @@ def execute_holehe(request):
     # Validate input data
     email = request.data.get("email")
     if not email:
-        return Response(
-            {"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Validate email format
     import re
 
     email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     if not re.match(email_pattern, email):
-        return Response(
-            {"error": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"error": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Get optional parameters
     investigation_id = request.data.get("investigation_id")
@@ -977,18 +901,12 @@ def execute_holehe(request):
         # Get or create investigation if provided
         investigation = None
         if investigation_id:
-            investigation = get_object_or_404(
-                Investigation, id=investigation_id, created_by=request.user
-            )
+            investigation = get_object_or_404(Investigation, id=investigation_id, created_by=request.user)
 
-        holehe_transform = Transform.objects.filter(
-            tool_name="holehe", is_enabled=True
-        ).first()
+        holehe_transform = Transform.objects.filter(tool_name="holehe", is_enabled=True).first()
         if not holehe_transform:
             return Response(
-                {
-                    "error": "Holehe transform not found. Please ensure it is properly configured."
-                },
+                {"error": "Holehe transform not found. Please ensure it is properly configured."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -1033,8 +951,7 @@ def execute_holehe(request):
         metadata = result.get("metadata", {})
 
         logger.info(
-            f"Holehe executed for email '{email}' by {request.user.username}. "
-            f"Found {len(results)} accounts."
+            f"Holehe executed for email '{email}' by {request.user.username}. " f"Found {len(results)} accounts."
         )
 
         response_data = {

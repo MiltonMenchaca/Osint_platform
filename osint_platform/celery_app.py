@@ -230,9 +230,7 @@ def worker_shutdown_handler(sender=None, **kwargs):
 
 
 @task_failure.connect
-def task_failure_handler(
-    sender=None, task_id=None, exception=None, traceback=None, einfo=None, **kwargs
-):
+def task_failure_handler(sender=None, task_id=None, exception=None, traceback=None, einfo=None, **kwargs):
     """Handle task failure globally"""
     import logging
 
@@ -250,9 +248,7 @@ def task_failure_handler(
 
 
 @before_task_publish.connect
-def before_task_publish_handler(
-    sender=None, headers=None, body=None, properties=None, **kwargs
-):
+def before_task_publish_handler(sender=None, headers=None, body=None, properties=None, **kwargs):
     """Handle before task publish"""
     import logging
 

@@ -35,15 +35,11 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "display_name",
-                    models.CharField(
-                        help_text="Human-readable display name", max_length=255
-                    ),
+                    models.CharField(help_text="Human-readable display name", max_length=255),
                 ),
                 (
                     "description",
-                    models.TextField(
-                        help_text="Description of what the transform does"
-                    ),
+                    models.TextField(help_text="Description of what the transform does"),
                 ),
                 (
                     "category",
@@ -95,15 +91,11 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "tool_name",
-                    models.CharField(
-                        help_text="Name of the underlying OSINT tool", max_length=100
-                    ),
+                    models.CharField(help_text="Name of the underlying OSINT tool", max_length=100),
                 ),
                 (
                     "command_template",
-                    models.TextField(
-                        help_text="Command template for executing the tool"
-                    ),
+                    models.TextField(help_text="Command template for executing the tool"),
                 ),
                 (
                     "parameters",
@@ -122,9 +114,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "is_enabled",
-                    models.BooleanField(
-                        default=True, help_text="Whether this transform is enabled"
-                    ),
+                    models.BooleanField(default=True, help_text="Whether this transform is enabled"),
                 ),
                 (
                     "requires_api_key",
@@ -160,18 +150,10 @@ class Migration(migrations.Migration):
                 "db_table": "transforms",
                 "ordering": ["category", "name"],
                 "indexes": [
-                    models.Index(
-                        fields=["category"], name="transforms_categor_699130_idx"
-                    ),
-                    models.Index(
-                        fields=["input_type"], name="transforms_input_t_2e67eb_idx"
-                    ),
-                    models.Index(
-                        fields=["is_enabled"], name="transforms_is_enab_84ad44_idx"
-                    ),
-                    models.Index(
-                        fields=["tool_name"], name="transforms_tool_na_0161ad_idx"
-                    ),
+                    models.Index(fields=["category"], name="transforms_categor_699130_idx"),
+                    models.Index(fields=["input_type"], name="transforms_input_t_2e67eb_idx"),
+                    models.Index(fields=["is_enabled"], name="transforms_is_enab_84ad44_idx"),
+                    models.Index(fields=["tool_name"], name="transforms_tool_na_0161ad_idx"),
                 ],
             },
         ),

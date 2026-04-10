@@ -63,20 +63,24 @@ class DmitryWrapper(BaseWrapper):
         subdomain_pattern = re.compile(r"HostName: ([a-zA-Z0-9\.\-]+)\s+IP: ([0-9\.]+)")
         for match in subdomain_pattern.finditer(stdout):
             hostname, ip = match.groups()
-            results.append({
-                "type": "subdomain",
-                "value": hostname,
-                "source": "dmitry",
-                "confidence": 0.8,
-                "properties": {"ip": ip},
-            })
-            results.append({
-                "type": "ip",
-                "value": ip,
-                "source": "dmitry",
-                "confidence": 0.8,
-                "properties": {"hostname": hostname},
-            })
+            results.append(
+                {
+                    "type": "subdomain",
+                    "value": hostname,
+                    "source": "dmitry",
+                    "confidence": 0.8,
+                    "properties": {"ip": ip},
+                }
+            )
+            results.append(
+                {
+                    "type": "ip",
+                    "value": ip,
+                    "source": "dmitry",
+                    "confidence": 0.8,
+                    "properties": {"hostname": hostname},
+                }
+            )
 
         # Parse Emails
         email_pattern = re.compile(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)")
@@ -84,29 +88,33 @@ class DmitryWrapper(BaseWrapper):
             email = match.group(1)
             # Filter out false positives (like example.com or specific internal strings if needed)
             if "dmitry" not in email.lower() and "example" not in email.lower():
-                results.append({
-                    "type": "email",
-                    "value": email,
-                    "source": "dmitry",
-                    "confidence": 0.6,
-                    "properties": {},
-                })
+                results.append(
+                    {
+                        "type": "email",
+                        "value": email,
+                        "source": "dmitry",
+                        "confidence": 0.6,
+                        "properties": {},
+                    }
+                )
 
         # Parse Ports
         port_pattern = re.compile(r"Port\s+(\d+)\s+:\s+(\w+)\s+:\s+(open|closed|filtered)")
         for match in port_pattern.finditer(stdout):
             port, proto, state = match.groups()
             if state.lower() == "open":
-                results.append({
-                    "type": "port",
-                    "value": f"{port}/{proto}",
-                    "source": "dmitry",
-                    "confidence": 0.9,
-                    "properties": {
-                        "port": int(port),
-                        "protocol": proto,
-                        "state": state,
-                    },
-                })
+                results.append(
+                    {
+                        "type": "port",
+                        "value": f"{port}/{proto}",
+                        "source": "dmitry",
+                        "confidence": 0.9,
+                        "properties": {
+                            "port": int(port),
+                            "protocol": proto,
+                            "state": state,
+                        },
+                    }
+                )
 
         return results

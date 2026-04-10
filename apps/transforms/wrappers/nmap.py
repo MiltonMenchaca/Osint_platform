@@ -31,9 +31,7 @@ class NmapWrapper(BaseWrapper):
         input_value = input_data["value"]
 
         # Get configuration options
-        scan_type = kwargs.get(
-            "scan_type", "tcp_connect"
-        )  # tcp_connect, tcp_syn, udp, ping
+        scan_type = kwargs.get("scan_type", "tcp_connect")  # tcp_connect, tcp_syn, udp, ping
         ports = kwargs.get("ports", "top-1000")  # port specification
         timing = kwargs.get("timing", 3)  # 0-5 timing template
         scripts = kwargs.get("scripts", None)  # NSE scripts
@@ -233,9 +231,7 @@ class NmapWrapper(BaseWrapper):
 
         return results
 
-    def _parse_port(
-        self, port_elem, host_ip: str, hostnames: List[str]
-    ) -> List[Dict[str, Any]]:
+    def _parse_port(self, port_elem, host_ip: str, hostnames: List[str]) -> List[Dict[str, Any]]:
         """Parse port information"""
 
         results = []
@@ -340,19 +336,13 @@ class NmapWrapper(BaseWrapper):
 
         return results
 
-    def _parse_scripts(
-        self, script_elem, host_ip: str, port_id: str = None
-    ) -> List[Dict[str, Any]]:
+    def _parse_scripts(self, script_elem, host_ip: str, port_id: str = None) -> List[Dict[str, Any]]:
         """Parse NSE script results"""
 
         results = []
 
         # Handle both single script and script container
-        scripts = (
-            script_elem.findall("script")
-            if script_elem.tag != "script"
-            else [script_elem]
-        )
+        scripts = script_elem.findall("script") if script_elem.tag != "script" else [script_elem]
 
         for script in scripts:
             script_id = script.get("id")

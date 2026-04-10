@@ -61,50 +61,28 @@ class Transform(models.Model):
         validators=[MinLengthValidator(3)],
         help_text="Unique name of the transform",
     )
-    display_name = models.CharField(
-        max_length=255, help_text="Human-readable display name"
-    )
+    display_name = models.CharField(max_length=255, help_text="Human-readable display name")
     description = models.TextField(help_text="Description of what the transform does")
-    category = models.CharField(
-        max_length=50, choices=CATEGORY_CHOICES, help_text="Category of the transform"
-    )
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, help_text="Category of the transform")
     input_type = models.CharField(
         max_length=50,
         choices=INPUT_TYPE_CHOICES,
         help_text="Type of entity this transform accepts as input",
     )
-    output_types = models.JSONField(
-        default=list, help_text="List of entity types this transform can output"
-    )
-    tool_name = models.CharField(
-        max_length=100, help_text="Name of the underlying OSINT tool"
-    )
-    command_template = models.TextField(
-        help_text="Command template for executing the tool"
-    )
-    parameters = models.JSONField(
-        default=dict, blank=True, help_text="Default parameters for the transform"
-    )
-    timeout = models.IntegerField(
-        default=300, help_text="Timeout in seconds for transform execution"
-    )
-    is_enabled = models.BooleanField(
-        default=True, help_text="Whether this transform is enabled"
-    )
-    requires_api_key = models.BooleanField(
-        default=False, help_text="Whether this transform requires an API key"
-    )
+    output_types = models.JSONField(default=list, help_text="List of entity types this transform can output")
+    tool_name = models.CharField(max_length=100, help_text="Name of the underlying OSINT tool")
+    command_template = models.TextField(help_text="Command template for executing the tool")
+    parameters = models.JSONField(default=dict, blank=True, help_text="Default parameters for the transform")
+    timeout = models.IntegerField(default=300, help_text="Timeout in seconds for transform execution")
+    is_enabled = models.BooleanField(default=True, help_text="Whether this transform is enabled")
+    requires_api_key = models.BooleanField(default=False, help_text="Whether this transform requires an API key")
     api_key_name = models.CharField(
         max_length=100,
         blank=True,
         help_text="Name of the environment variable for API key",
     )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="Timestamp when transform was created"
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True, help_text="Timestamp when transform was last updated"
-    )
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp when transform was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Timestamp when transform was last updated")
 
     class Meta:
         db_table = "transforms"
@@ -135,9 +113,7 @@ class Transform(models.Model):
         if self.requires_api_key and self.api_key_name:
             import os
 
-            required_keys = [
-                key.strip() for key in self.api_key_name.split(",") if key.strip()
-            ]
+            required_keys = [key.strip() for key in self.api_key_name.split(",") if key.strip()]
             return all(os.environ.get(key) for key in required_keys)
 
         return True
@@ -151,9 +127,7 @@ class Transform(models.Model):
         if self.requires_api_key and self.api_key_name:
             import os
 
-            required_keys = [
-                key.strip() for key in self.api_key_name.split(",") if key.strip()
-            ]
+            required_keys = [key.strip() for key in self.api_key_name.split(",") if key.strip()]
             missing = [key for key in required_keys if not os.environ.get(key)]
             if missing:
                 return (

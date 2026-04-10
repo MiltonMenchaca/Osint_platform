@@ -12,7 +12,7 @@ class InvestigationAdmin(admin.ModelAdmin):
         "status",
         "entities_count",
         "created_at",
-        "updated_at"
+        "updated_at",
         # Temporarily commented out fields that don't exist yet
         # 'user', 'priority'
     ]
@@ -141,9 +141,7 @@ class TransformExecutionAdmin(admin.ModelAdmin):
         if obj.celery_task_id:
             return format_html(
                 '<code style="background: #f0f0f0; padding: 2px 4px; border-radius: 3px;">{}</code>',
-                obj.celery_task_id[:8] + "..."
-                if len(obj.celery_task_id) > 8
-                else obj.celery_task_id,
+                obj.celery_task_id[:8] + "..." if len(obj.celery_task_id) > 8 else obj.celery_task_id,
             )
         return "-"
 
@@ -151,11 +149,7 @@ class TransformExecutionAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         """Optimize queryset with select_related"""
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("investigation", "input_entity")
-        )
+        return super().get_queryset(request).select_related("investigation", "input_entity")
 
     actions = ["retry_failed_executions", "cancel_running_executions"]
 
@@ -194,9 +188,7 @@ class TransformExecutionAdmin(admin.ModelAdmin):
                 )
 
         if count > 0:
-            self.message_user(
-                request, f"Successfully retried {count} failed executions."
-            )
+            self.message_user(request, f"Successfully retried {count} failed executions.")
 
     retry_failed_executions.short_description = "Retry selected failed executions"
 
@@ -227,8 +219,6 @@ class TransformExecutionAdmin(admin.ModelAdmin):
                 )
 
         if count > 0:
-            self.message_user(
-                request, f"Successfully cancelled {count} running executions."
-            )
+            self.message_user(request, f"Successfully cancelled {count} running executions.")
 
     cancel_running_executions.short_description = "Cancel selected running executions"

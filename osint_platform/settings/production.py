@@ -136,9 +136,7 @@ X_FRAME_OPTIONS = "DENY"
 
 # CORS Settings for Production
 CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
-    if origin.strip()
+    origin.strip() for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()
 ]
 if not CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS = [
@@ -147,9 +145,7 @@ if not CORS_ALLOWED_ORIGINS:
     ]
 
 CSRF_TRUSTED_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
-    if origin.strip()
+    origin.strip() for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()
 ]
 if not CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS = [

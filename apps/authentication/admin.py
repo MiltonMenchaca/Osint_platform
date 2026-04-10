@@ -17,7 +17,7 @@ class UserProfileInline(admin.StackedInline):
     verbose_name_plural = "Profile"
     fields = (
         "role",
-        "organization"
+        "organization",
         # Temporarily commented out fields that don't exist yet
         # 'phone_number', 'timezone', 'language', 'theme',
         # 'notifications_enabled', 'email_notifications', 'api_access_enabled'
@@ -44,7 +44,7 @@ class UserAdmin(BaseUserAdmin):
         "is_staff",
         "is_superuser",
         "date_joined",
-        "last_login"
+        "last_login",
         # Temporarily commented out fields that don't exist yet
         # 'userprofile__role', 'userprofile__organization'
     ]
@@ -105,7 +105,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         "user",
         "role",
         "organization",
-        "created_at"
+        "created_at",
         # Temporarily commented out fields that don't exist yet
         # 'phone_number', 'timezone', 'language', 'api_access_enabled',
         # 'notifications_enabled'
@@ -113,7 +113,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_filter = [
         "role",
         "organization",
-        "created_at"
+        "created_at",
         # Temporarily commented out fields that don't exist yet
         # 'timezone', 'language', 'api_access_enabled', 'notifications_enabled',
         # 'email_notifications', 'theme'
@@ -145,7 +145,7 @@ class UserProfileAdmin(admin.ModelAdmin):
             "Timestamps",
             {
                 "fields": ("created_at",),
-                "classes": ("collapse",)
+                "classes": ("collapse",),
                 # Temporarily commented out field that doesn't exist yet
                 # 'updated_at'
             },
@@ -179,20 +179,14 @@ class UserProfileAdmin(admin.ModelAdmin):
     def enable_notifications(self, request, queryset):
         """Enable notifications for selected profiles"""
         updated = queryset.update(notifications_enabled=True, email_notifications=True)
-        self.message_user(
-            request, f"Notifications enabled for {updated} user profiles."
-        )
+        self.message_user(request, f"Notifications enabled for {updated} user profiles.")
 
     enable_notifications.short_description = "Enable notifications"
 
     def disable_notifications(self, request, queryset):
         """Disable notifications for selected profiles"""
-        updated = queryset.update(
-            notifications_enabled=False, email_notifications=False
-        )
-        self.message_user(
-            request, f"Notifications disabled for {updated} user profiles."
-        )
+        updated = queryset.update(notifications_enabled=False, email_notifications=False)
+        self.message_user(request, f"Notifications disabled for {updated} user profiles.")
 
     disable_notifications.short_description = "Disable notifications"
 
@@ -213,7 +207,7 @@ class APITokenAdmin(admin.ModelAdmin):
         "is_active",
         "created_at",
         "expires_at",
-        "last_used_at"
+        "last_used_at",
         # Temporarily commented out fields that don't exist yet
         # 'scopes', 'user__userprofile__role'
     ]
@@ -227,7 +221,7 @@ class APITokenAdmin(admin.ModelAdmin):
     readonly_fields = [
         "id",
         "token",
-        "created_at"
+        "created_at",
         # Temporarily commented out fields that don't exist yet
         # 'updated_at', 'last_used_at', 'usage_count'
     ]
@@ -246,7 +240,7 @@ class APITokenAdmin(admin.ModelAdmin):
             "Usage Statistics",
             {
                 "fields": (),
-                "classes": ("collapse",)
+                "classes": ("collapse",),
                 # Temporarily commented out fields that don't exist yet
                 # 'fields': ('last_used_at', 'usage_count'),
             },
@@ -330,9 +324,7 @@ class APITokenAdmin(admin.ModelAdmin):
             token.save()
             updated_count += 1
 
-        self.message_user(
-            request, f"Extended expiration for {updated_count} API tokens by 30 days."
-        )
+        self.message_user(request, f"Extended expiration for {updated_count} API tokens by 30 days.")
 
     extend_expiration.short_description = "Extend expiration by 30 days"
 
@@ -380,9 +372,7 @@ class APITokenAdmin(admin.ModelAdmin):
         expired_tokens = APIToken.objects.filter(expires_at__lt=timezone.now()).count()
 
         # Recent usage
-        recent_usage = APIToken.objects.filter(
-            last_used_at__gte=timezone.now() - timedelta(days=7)
-        ).count()
+        recent_usage = APIToken.objects.filter(last_used_at__gte=timezone.now() - timedelta(days=7)).count()
 
         extra_context.update(
             {
@@ -420,28 +410,20 @@ class AuthenticationAdminSite(admin.AdminSite):
         profile_stats = {
             "total_profiles": UserProfile.objects.count(),
             "api_enabled": UserProfile.objects.filter(api_access_enabled=True).count(),
-            "notifications_enabled": UserProfile.objects.filter(
-                notifications_enabled=True
-            ).count(),
+            "notifications_enabled": UserProfile.objects.filter(notifications_enabled=True).count(),
         }
 
         # Token statistics
         token_stats = {
             "total_tokens": APIToken.objects.count(),
             "active_tokens": APIToken.objects.filter(is_active=True).count(),
-            "expired_tokens": APIToken.objects.filter(
-                expires_at__lt=timezone.now()
-            ).count(),
+            "expired_tokens": APIToken.objects.filter(expires_at__lt=timezone.now()).count(),
         }
 
         # Role distribution
         from django.db.models import Count
 
-        role_distribution = (
-            UserProfile.objects.values("role")
-            .annotate(count=Count("id"))
-            .order_by("-count")
-        )
+        role_distribution = UserProfile.objects.values("role").annotate(count=Count("id")).order_by("-count")
 
         extra_context.update(
             {

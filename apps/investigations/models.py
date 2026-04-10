@@ -24,9 +24,7 @@ class Investigation(models.Model):
         validators=[MinLengthValidator(3)],
         help_text="Name of the investigation",
     )
-    description = models.TextField(
-        blank=True, help_text="Detailed description of the investigation"
-    )
+    description = models.TextField(blank=True, help_text="Detailed description of the investigation")
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -39,18 +37,10 @@ class Investigation(models.Model):
         related_name="investigations",
         help_text="User who created this investigation",
     )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="Timestamp when investigation was created"
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True, help_text="Timestamp when investigation was last updated"
-    )
-    tags = models.JSONField(
-        default=list, blank=True, help_text="Tags associated with this investigation"
-    )
-    metadata = models.JSONField(
-        default=dict, blank=True, help_text="Additional metadata for the investigation"
-    )
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp when investigation was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Timestamp when investigation was last updated")
+    tags = models.JSONField(default=list, blank=True, help_text="Tags associated with this investigation")
+    metadata = models.JSONField(default=dict, blank=True, help_text="Additional metadata for the investigation")
 
     class Meta:
         db_table = "investigations"
@@ -130,9 +120,7 @@ class TransformExecution(models.Model):
         related_name="transform_executions",
         help_text="Investigation this execution belongs to",
     )
-    transform_name = models.CharField(
-        max_length=100, help_text="Name of the transform being executed"
-    )
+    transform_name = models.CharField(max_length=100, help_text="Name of the transform being executed")
     input_entity = models.ForeignKey(
         "entities.Entity",
         on_delete=models.CASCADE,
@@ -145,30 +133,14 @@ class TransformExecution(models.Model):
         default="pending",
         help_text="Current status of the execution",
     )
-    started_at = models.DateTimeField(
-        null=True, blank=True, help_text="Timestamp when execution started"
-    )
-    completed_at = models.DateTimeField(
-        null=True, blank=True, help_text="Timestamp when execution completed"
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True, help_text="Timestamp when execution was created"
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True, help_text="Timestamp when execution was last updated"
-    )
-    parameters = models.JSONField(
-        default=dict, blank=True, help_text="Parameters passed to the transform"
-    )
-    results = models.JSONField(
-        default=dict, blank=True, help_text="Results returned by the transform"
-    )
-    error_message = models.TextField(
-        blank=True, help_text="Error message if execution failed"
-    )
-    celery_task_id = models.CharField(
-        max_length=255, blank=True, help_text="Celery task ID for tracking"
-    )
+    started_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when execution started")
+    completed_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when execution completed")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp when execution was created")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Timestamp when execution was last updated")
+    parameters = models.JSONField(default=dict, blank=True, help_text="Parameters passed to the transform")
+    results = models.JSONField(default=dict, blank=True, help_text="Results returned by the transform")
+    error_message = models.TextField(blank=True, help_text="Error message if execution failed")
+    celery_task_id = models.CharField(max_length=255, blank=True, help_text="Celery task ID for tracking")
 
     class Meta:
         db_table = "transform_executions"
@@ -202,9 +174,7 @@ class TransformExecution(models.Model):
         self.status = "failed"
         self.completed_at = timezone.now()
         self.error_message = error_message
-        self.save(
-            update_fields=["status", "completed_at", "error_message", "updated_at"]
-        )
+        self.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
 
     def get_duration(self):
         """Get execution duration in seconds"""

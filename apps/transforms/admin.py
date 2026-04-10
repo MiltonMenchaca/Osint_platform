@@ -16,16 +16,9 @@ class TransformAdmin(admin.ModelAdmin):
         "is_enabled",
         "requires_api_key",
         "timeout",
-        "usage_count"
+        "usage_count",
     ]
-    list_filter = [
-        "category",
-        "tool_name",
-        "input_type",
-        "is_enabled",
-        "requires_api_key",
-        "created_at"
-    ]
+    list_filter = ["category", "tool_name", "input_type", "is_enabled", "requires_api_key", "created_at"]
     search_fields = ["name", "description", "tool_name", "command_template"]
     readonly_fields = ["id", "created_at", "updated_at", "usage_count"]
 
@@ -48,9 +41,7 @@ class TransformAdmin(admin.ModelAdmin):
         ),
         (
             "Input/Output Types",
-            {
-                "fields": ("input_type", "output_types")
-            },
+            {"fields": ("input_type", "output_types")},
         ),
         ("Parameters", {"fields": ("parameters",), "classes": ("collapse",)}),
         ("Usage Statistics", {"fields": ("usage_count",), "classes": ("collapse",)}),
@@ -66,9 +57,7 @@ class TransformAdmin(admin.ModelAdmin):
 
         count = TransformExecution.objects.filter(transform_name=obj.name).count()
         if count > 0:
-            return format_html(
-                '<span style="color: #0066cc; font-weight: bold;">{}</span>', count
-            )
+            return format_html('<span style="color: #0066cc; font-weight: bold;">{}</span>', count)
         return "0"
 
     usage_count.short_description = "Usage Count"
@@ -104,9 +93,7 @@ class TransformAdmin(admin.ModelAdmin):
             results.append(f"{status} {transform.name}: {message}")
 
         result_html = "<br>".join(results)
-        self.message_user(
-            request, mark_safe(f"Transform availability test results:<br>{result_html}")
-        )
+        self.message_user(request, mark_safe(f"Transform availability test results:<br>{result_html}"))
 
     test_transforms.short_description = "Test transform availability"
 
@@ -136,9 +123,7 @@ class TransformAdmin(admin.ModelAdmin):
                     updated_count += 1
 
         if updated_count > 0:
-            self.message_user(
-                request, f"Updated command templates for {updated_count} transforms."
-            )
+            self.message_user(request, f"Updated command templates for {updated_count} transforms.")
         else:
             self.message_user(request, "No transforms required template updates.")
 
@@ -158,8 +143,7 @@ class TransformAdmin(admin.ModelAdmin):
         # Add help text for parameters
         if "parameters" in form.base_fields:
             form.base_fields["parameters"].help_text = (
-                "JSON object defining additional parameters. "
-                'Example: {"timeout": 30, "format": "json"}'
+                "JSON object defining additional parameters. " 'Example: {"timeout": 30, "format": "json"}'
             )
 
         return form
@@ -204,9 +188,7 @@ class TransformAdmin(admin.ModelAdmin):
         from apps.investigations.models import TransformExecution
 
         total_executions = TransformExecution.objects.count()
-        successful_executions = TransformExecution.objects.filter(
-            status="completed"
-        ).count()
+        successful_executions = TransformExecution.objects.filter(status="completed").count()
 
         extra_context.update(
             {
@@ -214,11 +196,7 @@ class TransformAdmin(admin.ModelAdmin):
                 "enabled_transforms": enabled_transforms,
                 "total_executions": total_executions,
                 "successful_executions": successful_executions,
-                "success_rate": (
-                    (successful_executions / total_executions * 100)
-                    if total_executions > 0
-                    else 0
-                ),
+                "success_rate": ((successful_executions / total_executions * 100) if total_executions > 0 else 0),
             }
         )
 
@@ -242,12 +220,8 @@ class TransformAdminSite(admin.AdminSite):
             "total_transforms": Transform.objects.count(),
             "enabled_transforms": Transform.objects.filter(is_enabled=True).count(),
             "total_executions": TransformExecution.objects.count(),
-            "running_executions": TransformExecution.objects.filter(
-                status="running"
-            ).count(),
-            "failed_executions": TransformExecution.objects.filter(
-                status="failed"
-            ).count(),
+            "running_executions": TransformExecution.objects.filter(status="running").count(),
+            "failed_executions": TransformExecution.objects.filter(status="failed").count(),
         }
 
         # Most used transforms

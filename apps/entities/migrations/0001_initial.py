@@ -76,9 +76,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "confidence_score",
-                    models.FloatField(
-                        default=1.0, help_text="Confidence score (0.0 to 1.0)"
-                    ),
+                    models.FloatField(default=1.0, help_text="Confidence score (0.0 to 1.0)"),
                 ),
                 (
                     "source",
@@ -90,9 +88,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "created_at",
-                    models.DateTimeField(
-                        auto_now_add=True, help_text="Timestamp when entity was created"
-                    ),
+                    models.DateTimeField(auto_now_add=True, help_text="Timestamp when entity was created"),
                 ),
                 (
                     "updated_at",
@@ -160,9 +156,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "description",
-                    models.TextField(
-                        blank=True, help_text="Description of the relationship"
-                    ),
+                    models.TextField(blank=True, help_text="Description of the relationship"),
                 ),
                 (
                     "properties",
@@ -174,9 +168,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "confidence_score",
-                    models.FloatField(
-                        default=1.0, help_text="Confidence score (0.0 to 1.0)"
-                    ),
+                    models.FloatField(default=1.0, help_text="Confidence score (0.0 to 1.0)"),
                 ),
                 (
                     "source",

@@ -55,51 +55,35 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="relationship",
-            index=models.Index(
-                fields=["relationship_type"], name="relationshi_relatio_238db9_idx"
-            ),
+            index=models.Index(fields=["relationship_type"], name="relationshi_relatio_238db9_idx"),
         ),
         migrations.AddIndex(
             model_name="relationship",
-            index=models.Index(
-                fields=["investigation"], name="relationshi_investi_448e37_idx"
-            ),
+            index=models.Index(fields=["investigation"], name="relationshi_investi_448e37_idx"),
         ),
         migrations.AddIndex(
             model_name="relationship",
-            index=models.Index(
-                fields=["source_entity"], name="relationshi_source__702dce_idx"
-            ),
+            index=models.Index(fields=["source_entity"], name="relationshi_source__702dce_idx"),
         ),
         migrations.AddIndex(
             model_name="relationship",
-            index=models.Index(
-                fields=["target_entity"], name="relationshi_target__ca6217_idx"
-            ),
+            index=models.Index(fields=["target_entity"], name="relationshi_target__ca6217_idx"),
         ),
         migrations.AddIndex(
             model_name="relationship",
-            index=models.Index(
-                fields=["confidence_score"], name="relationshi_confide_8a025e_idx"
-            ),
+            index=models.Index(fields=["confidence_score"], name="relationshi_confide_8a025e_idx"),
         ),
         migrations.AlterUniqueTogether(
             name="relationship",
-            unique_together={
-                ("investigation", "source_entity", "target_entity", "relationship_type")
-            },
+            unique_together={("investigation", "source_entity", "target_entity", "relationship_type")},
         ),
         migrations.AddIndex(
             model_name="entity",
-            index=models.Index(
-                fields=["entity_type"], name="entities_entity__d2e80f_idx"
-            ),
+            index=models.Index(fields=["entity_type"], name="entities_entity__d2e80f_idx"),
         ),
         migrations.AddIndex(
             model_name="entity",
-            index=models.Index(
-                fields=["investigation"], name="entities_investi_88f7c6_idx"
-            ),
+            index=models.Index(fields=["investigation"], name="entities_investi_88f7c6_idx"),
         ),
         migrations.AddIndex(
             model_name="entity",
@@ -111,9 +95,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="entity",
-            index=models.Index(
-                fields=["confidence_score"], name="entities_confide_0d0236_idx"
-            ),
+            index=models.Index(fields=["confidence_score"], name="entities_confide_0d0236_idx"),
         ),
         migrations.AlterUniqueTogether(
             name="entity",
