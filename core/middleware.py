@@ -192,7 +192,10 @@ class RateLimitMiddleware(MiddlewareMixin):
             error_data = {
                 "error": {
                     "code": "RATE_LIMIT_EXCEEDED",
-                    "message": f"Rate limit exceeded: {limit_config['requests']} requests per {limit_config['window']} seconds",
+                    "message": (
+                        f"Rate limit exceeded: {limit_config['requests']} requests"
+                        f" per {limit_config['window']} seconds"
+                    ),
                     "details": {
                         "limit": limit_config["requests"],
                         "window": limit_config["window"],
@@ -407,7 +410,10 @@ class RequestSizeMiddleware(MiddlewareMixin):
                     error_data = {
                         "error": {
                             "code": "REQUEST_TOO_LARGE",
-                            "message": f"Request size ({content_length} bytes) exceeds maximum allowed size ({max_size} bytes)",
+                            "message": (
+                                f"Request size ({content_length} bytes) exceeds"
+                                f" maximum allowed size ({max_size} bytes)"
+                            ),
                             "details": {
                                 "max_size": max_size,
                                 "request_size": content_length,

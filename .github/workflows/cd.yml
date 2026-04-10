@@ -7,7 +7,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
   HELM_RELEASE: osint-platform
   K8S_NAMESPACE: osint-platform
 
@@ -29,6 +28,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set lowercase image prefix
+        id: image_prefix
+        run: echo "value=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Determine image tag
         id: tag
@@ -56,8 +59,8 @@ jobs:
           file: docker/Dockerfile.backend
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/backend:${{ steps.tag.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/backend:latest
+            ${{ env.REGISTRY }}/${{ steps.image_prefix.outputs.value }}/backend:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ steps.image_prefix.outputs.value }}/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -68,8 +71,8 @@ jobs:
           file: docker/Dockerfile.frontend-prod
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:${{ steps.tag.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:latest
+            ${{ env.REGISTRY }}/${{ steps.image_prefix.outputs.value }}/frontend:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ steps.image_prefix.outputs.value }}/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -80,8 +83,8 @@ jobs:
           file: docker/Dockerfile.tools-worker
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tools-worker:${{ steps.tag.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tools-worker:latest
+            ${{ env.REGISTRY }}/${{ steps.image_prefix.outputs.value }}/tools-worker:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ steps.image_prefix.outputs.value }}/tools-worker:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
